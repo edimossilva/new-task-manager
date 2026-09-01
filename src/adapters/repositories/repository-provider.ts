@@ -1,19 +1,13 @@
+import type { Firestore } from 'firebase/firestore'
 import type { TaskRepository } from '@/usecases/ports'
-import { LocalStorageTaskRepository } from './local-storage-task-repository'
+import { FirestoreTaskRepository } from './firestore-task-repository'
 
-let taskRepo: LocalStorageTaskRepository | null = null
+let taskRepo: FirestoreTaskRepository | null = null
 
-/**
- * Builds the repositories for one Google account. `userId` is the account's
- * `sub` claim, which namespaces the storage keys: signing in as a different
- * account on the same browser transparently opens a different dataset.
- *
- * Synchronous, unlike a network-backed provider would be. See
- * LocalStorageRepository.
- */
-export function initializeRepositories(userId: string): void {
-  taskRepo = new LocalStorageTaskRepository(userId)
-  taskRepo.initialize()
+export async function initializeRepositories(db: Firestore, userId: string): Promise<void> {
+  taskRepo = new FirestoreTaskRepository(db, userId)
+  // A second repository would join this in a Promise.all, as in controle-mensal.
+  await taskRepo.initialize()
 }
 
 export function clearRepositories(): void {

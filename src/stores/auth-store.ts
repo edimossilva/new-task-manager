@@ -1,7 +1,11 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { signInWithGoogle, signOutUser, onAuthStateChange } from '@/adapters/firebase/firebase-auth'
-import { initializeRepositories, clearRepositories } from '@/adapters/repositories'
+import { getFirestoreInstance } from '@/adapters/firebase/firebase-firestore'
+import {
+  initializeRepositories,
+  clearRepositories,
+} from '@/adapters/repositories/repository-provider'
 
 interface AuthUser {
   uid: string
@@ -14,12 +18,12 @@ export const useAuthStore = defineStore('auth', () => {
   const user = ref<AuthUser | null>(null)
   const loading = ref(true)
 
-  function setupSession(firebaseUser: {
+  async function setupSession(firebaseUser: {
     uid: string
     displayName: string | null
     photoURL: string | null
     email: string | null
-  }): void {
+  }): Promise<void> {
     user.value = {
       uid: firebaseUser.uid,
       displayName: firebaseUser.displayName,
@@ -27,15 +31,14 @@ export const useAuthStore = defineStore('auth', () => {
       email: firebaseUser.email,
     }
 
-    // Storage keys are namespaced by uid, so each account gets its own dataset.
-    initializeRepositories(firebaseUser.uid)
+    await initializeRepositories(getFirestoreInstance(), firebaseUser.uid)
   }
 
   function listenToAuthState(): Promise<void> {
     return new Promise((resolve) => {
-      onAuthStateChange((firebaseUser) => {
+      onAuthStateChange(async (firebaseUser) => {
         if (firebaseUser) {
-          setupSession(firebaseUser)
+          await setupSession(firebaseUser)
         } else {
           user.value = null
           clearRepositories()
@@ -48,7 +51,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function signIn(): Promise<void> {
     const firebaseUser = await signInWithGoogle()
-    setupSession(firebaseUser)
+    await setupSession(firebaseUser)
   }
 
   async function signOut(): Promise<void> {

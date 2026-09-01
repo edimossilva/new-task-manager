@@ -4,10 +4,11 @@ A personal recurring-task tracker. Sign in with Google, add tasks, give each one
 (daily, weekly, monthly or yearly), and check it off for the current period. The checkbox clears
 itself when the next period begins.
 
-Tasks are stored in your browser's `localStorage`, scoped to the account you signed in with. There
-is no backend and no server-side storage — Firebase is used for authentication only.
+Built on the same stack and conventions as
+[controle-mensal](https://github.com/edimossilva/controle-mensal).
 
-- Vue 3 + TypeScript, Vite 7, Vue Router 5, Pinia 3, Tailwind CSS 4, Firebase Auth
+- Vue 3 + TypeScript, Vite 7, Vue Router 5, Pinia 3, Tailwind CSS 4
+- Firebase Auth (Google sign-in) + Cloud Firestore
 - UI in Brazilian Portuguese
 
 ## Setup
@@ -16,15 +17,13 @@ is no backend and no server-side storage — Firebase is used for authentication
 yarn
 ```
 
-### Google sign-in
-
-Sign-in uses Firebase Authentication with the Google provider, the same setup as
-[controle-mensal](https://github.com/edimossilva/controle-mensal):
+### Firebase
 
 1. Create a project in the [Firebase console](https://console.firebase.google.com/).
 2. Under **Authentication → Sign-in method**, enable the **Google** provider.
-3. Under **Project settings → Your apps**, register a Web app and copy its config values.
-4. Copy `.env.example` to `.env` and fill them in:
+3. Under **Firestore Database**, create a database.
+4. Under **Project settings → Your apps**, register a Web app and copy its config values.
+5. Copy `.env.example` to `.env` and fill them in:
 
    ```sh
    cp .env.example .env
@@ -39,11 +38,25 @@ Sign-in uses Firebase Authentication with the Google provider, the same setup as
    VITE_FIREBASE_APP_ID=
    ```
 
-`localhost` is an authorized domain by default, so the dev server works on any port. Deploying to a
-real domain means adding it under **Authentication → Settings → Authorized domains**.
+6. Point the Firebase CLI at the project and deploy the security rules:
 
-Only Firebase Auth is used — no Firestore, no security rules. The signed-in account's `uid`
-namespaces the local storage key, so two accounts on the same browser keep separate task lists.
+   ```sh
+   firebase use --add
+   firebase deploy --only firestore:rules
+   ```
+
+   **Do this before using the app.** `firestore.rules` is what restricts each user to
+   `users/{uid}/**`; without it Firestore falls back to its default rules, which either lock
+   everything out or leave the database open, depending on the mode you picked.
+
+`localhost` is an authorized auth domain by default, so the dev server works on any port. Deploying
+to a real domain means adding it under **Authentication → Settings → Authorized domains**.
+
+## Data model
+
+Tasks live at `users/{uid}/tasks/{taskId}`. A task records its completed periods as an array of
+period keys (`2026-09-01`, `2026-W36`, `2026-09`, `2026`), so "is this done now?" is a lookup
+against the current key and rollover into the next period needs no scheduled job.
 
 ## Commands
 
@@ -54,4 +67,7 @@ yarn preview      # serve the production build
 yarn type-check   # vue-tsc --build
 yarn lint         # oxlint, then eslint (both with --fix)
 yarn format       # prettier over src/
+
+firebase deploy --only hosting          # deploy the built app
+firebase deploy --only firestore:rules  # deploy security rules
 ```

@@ -1,3 +1,3 @@
-export * from './local-storage-repository'
-export * from './local-storage-task-repository'
+export * from './firestore-repository'
+export * from './firestore-task-repository'
 export * from './repository-provider'

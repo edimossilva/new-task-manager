@@ -10,8 +10,8 @@ export interface UseCaseResult {
 
 /**
  * Retention cap for `completions`, roughly 13 months of daily check-offs.
- * Without it a handful of daily tasks would grow unbounded against the ~5 MB
- * localStorage quota.
+ * Without it a long-lived daily task would grow its document without bound,
+ * against Firestore's 1 MiB per-document limit.
  */
 const MAX_COMPLETIONS = 400
 

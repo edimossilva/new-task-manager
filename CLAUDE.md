@@ -16,9 +16,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 No test framework is configured.
 
-A static SPA with no backend of its own and no deploy config. Firebase is used for
-**authentication only** — there is no Firestore and no `firestore.rules`. Firebase config comes from
-`VITE_FIREBASE_*` env vars (`.env`, not committed).
+Deployed via Firebase Hosting (`firebase.json` serves `dist/` as an SPA). Firestore security
+rules live in `firestore.rules` and must be deployed (`firebase deploy --only firestore:rules`) —
+they are what restricts each user to `users/{uid}/**`. Firebase config comes from `VITE_FIREBASE_*`
+env vars (`.env`, not committed). `.firebaserc` and the hosting cache are gitignored.
 
 ## What This App Is
 
@@ -27,15 +28,14 @@ diacritics). One entity: tasks, each with a title, an optional description, and 
 daily / weekly / monthly / yearly. A task is checked off for the *current period* and re-arms itself
 when the next one starts.
 
-Data is stored in the browser under `new-task-manager:tasks:<uid>`, where `<uid>` is the signed-in
-Firebase user's id. Google sign-in goes through Firebase Auth (popup), mirroring `controle-mensal`;
-unlike that app, nothing is persisted server-side.
+Data is stored per-user in Firestore under `users/{uid}/tasks/{taskId}`, with Google sign-in via
+Firebase Auth.
 
 ## Architecture
 
 Vue 3 + TypeScript SPA using **Vite 7**, **Vue Router 5** (history mode), **Pinia 3** and
-**Tailwind CSS 4** (via `@tailwindcss/vite`), plus **Firebase** for authentication only. The `@`
-path alias resolves to `./src`.
+**Tailwind CSS 4** (via `@tailwindcss/vite`), and **Firebase** (Auth + Firestore). The `@` path
+alias resolves to `./src`.
 
 Follow **Clean Architecture**. The dependency rule is strict: inner layers never import from outer
 layers.
@@ -49,27 +49,25 @@ layers.
    enforcing business rules, returning `UseCaseResult { success, error }` with a Portuguese error
    message. Port interfaces live in `src/usecases/ports/`. No Vue, no Pinia, no storage APIs.
 3. **Adapters** (`src/adapters/`):
-   - `src/adapters/firebase/` — lazy singletons for the Firebase app and Auth (Google popup
-     sign-in). Copied from `controle-mensal`.
-   - `src/adapters/repositories/` — localStorage implementations of the port interfaces. Never
-     import Vue or Pinia.
+   - `src/adapters/firebase/` — lazy singletons for the Firebase app, Auth (Google popup sign-in)
+     and the Firestore instance. Copied from `controle-mensal`.
+   - `src/adapters/repositories/` — Firestore implementations of the port interfaces. Never import
+     Vue or Pinia.
 4. **UI** (outermost) — `src/views/` (one folder per entity with `*ListView` / `*FormView`),
    `src/components/`, `src/composables/`, `src/stores/`, `src/router/`.
 
 ### Data flow & key mechanics
 
-- **`LocalStorageRepository<T>`** (`src/adapters/repositories/local-storage-repository.ts`) is a
-  generic base. It reads the whole collection into an in-memory `Map` on `initialize()`, serves all
-  reads synchronously from that cache, and rewrites the single storage key on every mutation.
-  Reads log and start empty on corrupt JSON but never delete the key; writes swallow
-  `QuotaExceededError` into `console.error`, since the cache already reflects the change.
-  **`initialize()` is synchronous**, and so is `initializeRepositories()` — localStorage is a
-  synchronous API, so unlike a network-backed repository there is nothing to await. Reintroducing a
-  remote backend would make both async again.
+- **`FirestoreRepository<T>`** (`src/adapters/repositories/firestore-repository.ts`) is
+  `controle-mensal`'s file verbatim: a generic base that loads the whole collection into an in-memory
+  `Map` on `initialize()`, then serves all reads synchronously from that cache. Writes update the
+  cache immediately and persist to Firestore **fire-and-forget** (errors only logged). Consequence:
+  use-case and store APIs are synchronous and there are no loading states past login.
 - **Repository provider** (`repository-provider.ts`) holds module-level singletons.
-  `initializeRepositories(uid)` builds them after sign-in; `getTaskRepository()` throws if
-  called before that. Adding an entity means: entity + port + repository (with serialize/
-  deserialize) + registration in the provider + use cases + store + views + routes.
+  `initializeRepositories(db, userId)` constructs and initializes them after login;
+  `getTaskRepository()` throws if called before that. Adding an entity means: entity + port +
+  firestore repository (with serialize/deserialize) + registration in the provider + use cases +
+  store + views + routes.
 - **Bootstrap order** (`src/main.ts`): the auth store resolves the initial Firebase auth state
   (and initializes the repositories) **before** the router is installed and the app mounts, so there
   is no auth flicker and no route-level loading state. A global `beforeEach` redirects
@@ -85,14 +83,15 @@ layers.
   no scheduler correct after being closed for months. Period keys are computed from **local** time;
   `toISOString()` would roll the day over hours early west of UTC. Weekly keys use ISO-8601 week
   numbering, whose week-year can differ from the calendar year (2025-12-29 is `2026-W01`).
-  `MAX_COMPLETIONS` (400) caps the history against the ~5 MB localStorage quota. Changing a task's
+  `MAX_COMPLETIONS` (400) caps the history against Firestore's 1 MiB document limit. Changing a task's
   frequency leaves the old keys in place: they can never match the new format, so the task correctly
   shows as pending, and keeping them preserves the history for free.
   `use-current-period.ts` keeps a `now` ref fresh so a tab left open overnight notices the boundary.
 - **Auth** (`src/adapters/firebase/firebase-auth.ts`) is `controle-mensal`'s file verbatim:
   `signInWithPopup` + `GoogleAuthProvider`, `onAuthStateChanged`, and `signOut`. The Firebase SDK
-  owns session persistence and token refresh. The store's `setupSession` is synchronous here,
-  because there is no Firestore to await and no shared-data owner to resolve.
+  owns session persistence and token refresh. Unlike `controle-mensal` there is no sharing feature,
+  so `setupSession` initializes the repositories against the signed-in uid directly rather than
+  resolving an effective data-owner uid.
 - **Stores** are thin Pinia wrappers: they construct use cases on each call via `createUseCases()`
   (pulling repos from the provider), copy results into `ref`s, and push success messages through
   `notification-store` (rendered by `NotificationToast` in `App.vue`).
