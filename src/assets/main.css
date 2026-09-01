@@ -1,0 +1,264 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-bg: #eafbff;
+  --color-bg-subtle: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-hover: #dff0f5;
+  --color-surface-active: #d0e5ec;
+  --color-border: rgba(127, 143, 163, 0.22);
+  --color-border-hover: rgba(127, 143, 163, 0.4);
+
+  --color-text: #1a2332;
+  --color-text-secondary: #4e5d70;
+  --color-text-muted: #7f8fa3;
+
+  --color-primary: #1a9dc0;
+  --color-primary-hover: #148aab;
+  --color-primary-dim: rgba(119, 221, 249, 0.2);
+
+  --color-success: #16a76a;
+  --color-success-dim: rgba(22, 167, 106, 0.12);
+
+  --color-danger: #d4555a;
+  --color-danger-hover: #c03e44;
+  --color-danger-dim: rgba(255, 160, 163, 0.18);
+
+  --color-warning: #d49b08;
+
+  --color-freq-daily: #1a9dc0;
+  --color-freq-weekly: #16a76a;
+  --color-freq-monthly: #d49b08;
+  --color-freq-yearly: #8b5cf6;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.1);
+  --shadow-glow: 0 0 24px rgba(26, 157, 192, 0.12);
+
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+/* ── Base ─────────────────────────────────────────────────────── */
+@layer base {
+  html {
+    color-scheme: light;
+  }
+
+  body {
+    @apply font-sans text-[0.9375rem] leading-relaxed text-text bg-bg min-h-screen;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1 {
+    @apply text-[1.75rem] font-bold tracking-tight text-text mb-5;
+  }
+
+  h2 {
+    @apply text-[1.35rem] font-semibold tracking-tight;
+  }
+
+  p {
+    @apply text-text-secondary;
+  }
+
+  a {
+    @apply text-primary no-underline transition-colors duration-[120ms];
+  }
+
+  a:hover {
+    @apply text-primary-hover;
+  }
+
+  table {
+    @apply w-full mt-5 bg-surface border border-border rounded-lg overflow-hidden;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  thead {
+    background: rgba(0, 0, 0, 0.02);
+  }
+
+  th {
+    @apply px-4 py-3 text-left text-xs font-semibold uppercase tracking-widest text-text-muted border-b border-border;
+  }
+
+  td {
+    @apply px-4 py-3 text-sm text-text-secondary border-b border-border;
+  }
+
+  tbody tr {
+    @apply transition-colors duration-[120ms];
+  }
+
+  tbody tr:hover {
+    @apply bg-surface-hover;
+  }
+
+  tbody tr:last-child td {
+    @apply border-b-0;
+  }
+
+  label {
+    @apply block text-[0.8125rem] font-medium text-text-secondary mb-1.5 tracking-[0.01em];
+  }
+
+  input,
+  select,
+  textarea {
+    @apply w-full px-3.5 py-2.5 font-sans text-sm text-text bg-surface border border-border rounded-sm outline-none
+           transition-[border-color,box-shadow,background] duration-[120ms];
+  }
+
+  input:hover,
+  select:hover,
+  textarea:hover {
+    @apply border-border-hover bg-surface-hover;
+  }
+
+  input:focus,
+  select:focus,
+  textarea:focus {
+    @apply border-primary bg-surface-hover;
+    box-shadow: 0 0 0 3px var(--color-primary-dim);
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    @apply text-text-muted;
+  }
+
+  select {
+    @apply cursor-pointer appearance-none pr-9;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%234e5d70' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+  }
+
+  select option {
+    @apply bg-bg-subtle text-text;
+  }
+
+  input[type='color'] {
+    @apply w-12 h-9 p-1 cursor-pointer;
+  }
+
+  input[type='checkbox'] {
+    @apply w-4 h-4 p-0 cursor-pointer accent-primary;
+  }
+
+  textarea {
+    @apply resize-y min-h-20;
+  }
+
+  dialog {
+    @apply bg-bg-subtle text-text border border-border rounded-lg p-7 min-w-[360px] shadow-lg;
+  }
+
+  dialog::backdrop {
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+  }
+}
+
+/* ── Components ───────────────────────────────────────────────── */
+@layer components {
+  .btn {
+    @apply inline-flex items-center gap-1.5 px-[1.1rem] py-2 font-sans text-[0.8125rem] font-medium leading-[1.4]
+           text-bg bg-primary border-none rounded-sm cursor-pointer no-underline
+           transition-[background,box-shadow,transform] duration-[120ms];
+  }
+
+  .btn:hover {
+    @apply bg-primary-hover shadow-glow -translate-y-px;
+  }
+
+  .btn:active {
+    @apply translate-y-0;
+  }
+
+  .btn-danger {
+    @apply bg-danger text-white;
+  }
+
+  .btn-danger:hover {
+    @apply bg-danger-hover;
+    box-shadow: 0 0 24px rgba(192, 62, 68, 0.15);
+  }
+
+  .btn-secondary {
+    @apply bg-surface text-text-secondary border border-border;
+  }
+
+  .btn-secondary:hover {
+    @apply bg-surface-hover text-text border-border-hover;
+  }
+
+  .btn-link {
+    @apply bg-transparent border-none text-text-secondary font-sans text-[0.8125rem] font-medium
+           cursor-pointer px-2 py-1 rounded-sm no-underline
+           transition-[color,background] duration-[120ms];
+  }
+
+  .btn-link:hover {
+    @apply text-primary bg-primary-dim;
+  }
+
+  .btn-link.danger {
+    @apply text-text-muted;
+  }
+
+  .btn-link.danger:hover {
+    @apply text-danger bg-danger-dim;
+  }
+
+  th.sortable {
+    @apply cursor-pointer select-none transition-colors duration-[120ms];
+  }
+
+  th.sortable:hover {
+    @apply text-text-secondary;
+  }
+
+  th.sortable::after {
+    content: ' \2195';
+    @apply text-[0.7em] opacity-40;
+  }
+
+  th.sort-asc::after {
+    content: ' \2191';
+    @apply opacity-100 text-primary;
+  }
+
+  th.sort-desc::after {
+    content: ' \2193';
+    @apply opacity-100 text-primary;
+  }
+
+  th.sort-asc,
+  th.sort-desc {
+    @apply text-text-secondary;
+  }
+
+  td .actions {
+    @apply flex items-center gap-1;
+  }
+
+  .form-group {
+    @apply mb-5;
+  }
+
+  .dialog-actions {
+    @apply flex gap-2 justify-end mt-6;
+  }
+
+  .error {
+    @apply text-danger text-[0.8125rem] mt-2 px-3 py-2 bg-danger-dim rounded-sm border border-[rgba(212,85,90,0.18)];
+  }
+}
