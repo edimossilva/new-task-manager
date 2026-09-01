@@ -23,7 +23,7 @@ async function handleSignOut() {
         TM
       </RouterLink>
       <div class="flex items-center gap-1 overflow-x-auto flex-1">
-        <RouterLink to="/" class="nav-link">Hoje</RouterLink>
+        <RouterLink to="/" class="nav-link nav-link-exact">Hoje</RouterLink>
         <RouterLink to="/tasks" class="nav-link">Tarefas</RouterLink>
       </div>
       <div v-if="authStore.user" class="flex items-center gap-2 shrink-0 ml-auto">
@@ -60,7 +60,8 @@ async function handleSignOut() {
 .nav-link:hover {
   @apply text-text-secondary bg-surface-hover;
 }
-.nav-link.router-link-exact-active {
+.nav-link.router-link-active:not(.nav-link-exact),
+.nav-link-exact.router-link-exact-active {
   @apply text-primary bg-primary-dim;
 }
 </style>

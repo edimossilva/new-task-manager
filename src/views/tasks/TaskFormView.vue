@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import type { Task, TaskFrequency } from '@/entities'
 import { FREQUENCIES, FREQUENCY_LABELS } from '@/entities'
@@ -10,6 +10,10 @@ const store = useTaskStore()
 const router = useRouter()
 
 const { isEditMode, existing } = useEntityForm<Task>((id) => store.getById(id))
+
+// Reaching /tasks/:id/edit with an unknown id would otherwise fall through to
+// create() on submit and silently make a second task.
+const notFound = computed(() => isEditMode.value && existing.value === undefined)
 
 const title = ref('')
 const description = ref('')
@@ -23,6 +27,8 @@ watch(existing, (task) => {
 })
 
 function handleSubmit() {
+  if (notFound.value) return
+
   const input = {
     title: title.value,
     description: description.value.trim() || undefined,
@@ -38,9 +44,10 @@ function handleSubmit() {
 <template>
   <h1>{{ isEditMode ? 'Editar Tarefa' : 'Nova Tarefa' }}</h1>
 
-  <p v-if="store.error" class="error">{{ store.error }}</p>
+  <p v-if="notFound" class="error">Tarefa nao encontrada.</p>
+  <p v-else-if="store.error" class="error">{{ store.error }}</p>
 
-  <form class="max-w-lg" @submit.prevent="handleSubmit">
+  <form v-if="!notFound" class="max-w-lg" @submit.prevent="handleSubmit">
     <div class="form-group">
       <label for="title">Titulo</label>
       <input id="title" v-model="title" type="text" required autofocus />
@@ -65,4 +72,5 @@ function handleSubmit() {
       <RouterLink to="/tasks" class="btn btn-secondary">Cancelar</RouterLink>
     </div>
   </form>
+  <RouterLink v-else to="/tasks" class="btn btn-secondary">Voltar</RouterLink>
 </template>
