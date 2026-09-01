@@ -4,10 +4,10 @@ A personal recurring-task tracker. Sign in with Google, add tasks, give each one
 (daily, weekly, monthly or yearly), and check it off for the current period. The checkbox clears
 itself when the next period begins.
 
-Everything lives in your browser: tasks are stored in `localStorage`, scoped to the Google account
-you signed in with. There is no backend and no server-side storage.
+Tasks are stored in your browser's `localStorage`, scoped to the account you signed in with. There
+is no backend and no server-side storage — Firebase is used for authentication only.
 
-- Vue 3 + TypeScript, Vite 7, Vue Router 5, Pinia 3, Tailwind CSS 4
+- Vue 3 + TypeScript, Vite 7, Vue Router 5, Pinia 3, Tailwind CSS 4, Firebase Auth
 - UI in Brazilian Portuguese
 
 ## Setup
@@ -18,32 +18,37 @@ yarn
 
 ### Google sign-in
 
-Sign-in uses Google Identity Services directly, so you need your own OAuth client:
+Sign-in uses Firebase Authentication with the Google provider, the same setup as
+[controle-mensal](https://github.com/edimossilva/controle-mensal):
 
-1. Open the [Google Cloud Console](https://console.cloud.google.com/apis/credentials) and create an
-   **OAuth 2.0 Client ID** of type **Web application**.
-2. Under **Authorized JavaScript origins**, add `http://localhost:5173` — exactly that, with the
-   port and no trailing slash. No redirect URI is needed; the app uses the popup flow.
-3. Copy `.env.example` to `.env` and fill in the client ID:
+1. Create a project in the [Firebase console](https://console.firebase.google.com/).
+2. Under **Authentication → Sign-in method**, enable the **Google** provider.
+3. Under **Project settings → Your apps**, register a Web app and copy its config values.
+4. Copy `.env.example` to `.env` and fill them in:
 
    ```sh
    cp .env.example .env
    ```
 
    ```
-   VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+   VITE_FIREBASE_API_KEY=
+   VITE_FIREBASE_AUTH_DOMAIN=
+   VITE_FIREBASE_PROJECT_ID=
+   VITE_FIREBASE_STORAGE_BUCKET=
+   VITE_FIREBASE_MESSAGING_SENDER_ID=
+   VITE_FIREBASE_APP_ID=
    ```
 
-Without a client ID the login screen shows a configuration message instead of the Google button.
+`localhost` is an authorized domain by default, so the dev server works on any port. Deploying to a
+real domain means adding it under **Authentication → Settings → Authorized domains**.
 
-The app decodes the returned ID token to read your name, email and avatar. It does **not** verify
-the token — there is no server to present it to, and it grants no authority. The sign-in identifies
-which set of local tasks to open; it is not an access control.
+Only Firebase Auth is used — no Firestore, no security rules. The signed-in account's `uid`
+namespaces the local storage key, so two accounts on the same browser keep separate task lists.
 
 ## Commands
 
 ```sh
-yarn dev          # dev server on http://localhost:5173
+yarn dev          # dev server
 yarn build        # type-check + production build
 yarn preview      # serve the production build
 yarn type-check   # vue-tsc --build

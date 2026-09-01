@@ -28,16 +28,16 @@ async function handleSignOut() {
       </div>
       <div v-if="authStore.user" class="flex items-center gap-2 shrink-0 ml-auto">
         <img
-          v-if="authStore.user.picture"
-          :src="authStore.user.picture"
-          :alt="authStore.user.name"
+          v-if="authStore.user.photoURL"
+          :src="authStore.user.photoURL"
+          :alt="authStore.user.displayName ?? 'Avatar'"
           class="w-7 h-7 rounded-full"
           referrerpolicy="no-referrer"
         />
         <span
           class="text-[0.8125rem] text-text-secondary whitespace-nowrap max-w-[120px] overflow-hidden text-ellipsis"
         >
-          {{ authStore.user.name }}
+          {{ authStore.user.displayName }}
         </span>
         <button
           class="px-2 py-1 text-xs font-medium text-text-muted bg-transparent border border-border rounded-sm cursor-pointer whitespace-nowrap transition-colors duration-[120ms] hover:text-danger hover:border-danger"

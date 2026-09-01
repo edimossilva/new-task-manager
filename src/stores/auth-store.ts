@@ -1,53 +1,61 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
-import { decodeIdToken } from '@/adapters/google/decode-id-token'
-import { disableGoogleAutoSelect } from '@/adapters/google/google-identity'
-import {
-  clearSession,
-  readSession,
-  saveSession,
-  type GoogleUser,
-} from '@/adapters/google/session-storage'
-import { clearRepositories, initializeRepositories } from '@/adapters/repositories'
+import { signInWithGoogle, signOutUser, onAuthStateChange } from '@/adapters/firebase/firebase-auth'
+import { initializeRepositories, clearRepositories } from '@/adapters/repositories'
 
-export type { GoogleUser }
+interface AuthUser {
+  uid: string
+  displayName: string | null
+  photoURL: string | null
+  email: string | null
+}
 
 export const useAuthStore = defineStore('auth', () => {
-  const user = ref<GoogleUser | null>(null)
+  const user = ref<AuthUser | null>(null)
+  const loading = ref(true)
 
-  function startSession(profile: GoogleUser): void {
-    user.value = profile
-    saveSession(profile)
-    initializeRepositories(profile.sub)
+  function setupSession(firebaseUser: {
+    uid: string
+    displayName: string | null
+    photoURL: string | null
+    email: string | null
+  }): void {
+    user.value = {
+      uid: firebaseUser.uid,
+      displayName: firebaseUser.displayName,
+      photoURL: firebaseUser.photoURL,
+      email: firebaseUser.email,
+    }
+
+    // Storage keys are namespaced by uid, so each account gets its own dataset.
+    initializeRepositories(firebaseUser.uid)
   }
 
-  /**
-   * Boot path, called from main.ts before the router is installed.
-   * Synchronous on purpose: localStorage is the only source of truth here, and
-   * mounting must never wait on the network.
-   */
-  function restoreSession(): void {
-    const stored = readSession()
-    if (stored) startSession(stored)
-  }
-
-  /** Called with the ID token from the Google Identity Services callback. */
-  function completeSignIn(credential: string): void {
-    const payload = decodeIdToken(credential)
-    startSession({
-      sub: payload.sub,
-      name: payload.name ?? payload.email,
-      email: payload.email,
-      picture: payload.picture ?? '',
+  function listenToAuthState(): Promise<void> {
+    return new Promise((resolve) => {
+      onAuthStateChange((firebaseUser) => {
+        if (firebaseUser) {
+          setupSession(firebaseUser)
+        } else {
+          user.value = null
+          clearRepositories()
+        }
+        loading.value = false
+        resolve()
+      })
     })
   }
 
-  function signOut(): void {
-    disableGoogleAutoSelect()
-    clearSession()
+  async function signIn(): Promise<void> {
+    const firebaseUser = await signInWithGoogle()
+    setupSession(firebaseUser)
+  }
+
+  async function signOut(): Promise<void> {
+    await signOutUser()
     user.value = null
     clearRepositories()
   }
 
-  return { user, restoreSession, completeSignIn, signOut }
+  return { user, loading, listenToAuthState, signIn, signOut }
 })

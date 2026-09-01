@@ -33,7 +33,7 @@ const pendingByFrequency = computed(() =>
   })).filter((group) => group.tasks.length > 0),
 )
 
-const firstName = computed(() => authStore.user?.name.split(' ')[0] ?? '')
+const firstName = computed(() => authStore.user?.displayName?.split(' ')[0] ?? '')
 
 function groupLabel(frequency: TaskFrequency): string {
   return FREQUENCY_LABELS[frequency]
