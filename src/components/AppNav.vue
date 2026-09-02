@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { RouterLink, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth-store'
+import { usePeriodStore } from '@/stores/period-store'
 
 const authStore = useAuthStore()
+const periodStore = usePeriodStore()
 const router = useRouter()
 
 async function handleSignOut() {
@@ -10,6 +12,8 @@ async function handleSignOut() {
   // mounted lets its reactivity re-enter getTaskRepository() after they are gone.
   await router.push({ name: 'login' })
   authStore.signOut()
+  // The store outlives the session; the next user must not inherit a browsed date.
+  periodStore.clear()
 }
 </script>
 
@@ -23,7 +27,7 @@ async function handleSignOut() {
         TM
       </RouterLink>
       <div class="flex items-center gap-1 overflow-x-auto flex-1">
-        <RouterLink to="/" class="nav-link nav-link-exact">Hoje</RouterLink>
+        <RouterLink to="/" class="nav-link nav-link-exact">Resumo</RouterLink>
         <RouterLink to="/tasks" class="nav-link">Tarefas</RouterLink>
       </div>
       <div v-if="authStore.user" class="flex items-center gap-2 shrink-0 ml-auto">

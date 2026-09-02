@@ -86,7 +86,25 @@ layers.
   `MAX_COMPLETIONS` (400) caps the history against Firestore's 1 MiB document limit. Changing a task's
   frequency leaves the old keys in place: they can never match the new format, so the task correctly
   shows as pending, and keeping them preserves the history for free.
-  `use-current-period.ts` keeps a `now` ref fresh so a tab left open overnight notices the boundary.
+- **Period selection** (`src/stores/period-store.ts`): the store owns both the live clock (`now`,
+  ticked every 60s and on `visibilitychange`) and `selection` — `{ year, month, day } | null`, where
+  **null means follow the clock**. `usePeriodSelection()` derives `referenceDate`, `today` and
+  `isToday` from it, and `PeriodSelector.vue` renders the Dia/Mes/Ano selects. Details that matter:
+  - The clock is in the **store, not a composable**, because a composable's `onMounted` gives every
+    caller its own interval and its own `now` ref — two refs sampled either side of midnight would
+    have the selector and the view disagree about the date.
+  - `referenceDate` uses a ternary, not `??`: with a selection pinned it never reads `now`, so it
+    never subscribes and the tick cannot drag the view back to today.
+  - Month is **1-based** everywhere (store, selector, `daysInMonth`), matching the period-key
+    format, and converted to `Date`'s 0-based month at exactly one site — which builds at **noon**,
+    since local midnight does not exist on a DST-transition day in some zones.
+  - The day is clamped by `daysInMonth` **and** the option list is trimmed. Both are needed: a value
+    with no matching `<option>` renders the select blank.
+  - Labels that say `Hoje` must compare against `today`, not `referenceDate`, or an August key would
+    be labelled `Hoje` while browsing August.
+  - The selection is not persisted, and `AppNav` clears it on sign-out.
+  - Browsing the past reconstructs it from tasks that still exist; `existsIn` hides tasks created
+    after the browsed period, but hard-deleted tasks cannot be recovered.
 - **Auth** (`src/adapters/firebase/firebase-auth.ts`) is `controle-mensal`'s file verbatim:
   `signInWithPopup` + `GoogleAuthProvider`, `onAuthStateChanged`, and `signOut`. The Firebase SDK
   owns session persistence and token refresh. Unlike `controle-mensal` there is no sharing feature,

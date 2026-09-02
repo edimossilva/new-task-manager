@@ -20,6 +20,22 @@ export const FREQUENCY_LABELS: Record<TaskFrequency, string> = {
   yearly: 'Anual',
 }
 
+/** Portuguese month names, without diacritics, matching the rest of the UI. */
+export const MONTH_NAMES = [
+  'Janeiro',
+  'Fevereiro',
+  'Marco',
+  'Abril',
+  'Maio',
+  'Junho',
+  'Julho',
+  'Agosto',
+  'Setembro',
+  'Outubro',
+  'Novembro',
+  'Dezembro',
+]
+
 const CURRENT_PERIOD_LABELS: Record<TaskFrequency, string> = {
   daily: 'Hoje',
   weekly: 'Esta semana',
@@ -84,4 +100,42 @@ export function formatPeriodLabel(
 ): string {
   if (key === periodKey(frequency, referenceDate)) return CURRENT_PERIOD_LABELS[frequency]
   return key
+}
+
+/** Days in a month. `month` is 1-based, matching the period-key format. */
+export function daysInMonth(year: number, month: number): number {
+  return new Date(year, month, 0).getDate()
+}
+
+/** Same calendar day in local time. Timestamps would compare the clock too. */
+export function isSameDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  )
+}
+
+const KEY_PATTERNS: Record<TaskFrequency, RegExp> = {
+  daily: /^\d{4}-\d{2}-\d{2}$/,
+  weekly: /^\d{4}-W\d{2}$/,
+  monthly: /^\d{4}-\d{2}$/,
+  yearly: /^\d{4}$/,
+}
+
+/**
+ * Whether a stored key was written under this frequency.
+ *
+ * Changing a task's frequency leaves the old keys in place, so `completions` can
+ * hold a mix of formats. Lexicographic order does not interleave them
+ * chronologically -- within one year `2026` < `2026-09` < `2026-09-01` < `2026-W01`
+ * -- so anything that reads "the latest completion" has to filter first.
+ */
+export function matchesFrequency(frequency: TaskFrequency, key: string): boolean {
+  return KEY_PATTERNS[frequency].test(key)
+}
+
+/** dd/mm/yyyy, the format the period selector shows. */
+export function formatDate(date: Date): string {
+  return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()}`
 }

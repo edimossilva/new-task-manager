@@ -1,29 +1,36 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import type { Task, TaskFrequency } from '@/entities'
-import { FREQUENCIES, FREQUENCY_LABELS } from '@/entities'
+import { FREQUENCIES, FREQUENCY_LABELS, formatDate } from '@/entities'
 import { useAuthStore } from '@/stores/auth-store'
 import { useTaskStore } from '@/stores/task-store'
-import { useCurrentPeriod } from '@/composables/use-current-period'
+import { usePeriodSelection } from '@/composables/use-period-selection'
 import FrequencyBadge from '@/components/FrequencyBadge.vue'
+import PeriodSelector from '@/components/PeriodSelector.vue'
 import TaskCheckbox from '@/components/TaskCheckbox.vue'
 
 const authStore = useAuthStore()
 const store = useTaskStore()
-const { now } = useCurrentPeriod()
+const { referenceDate, isToday } = usePeriodSelection()
 
 onMounted(() => store.loadAll())
 
 function isCompleted(task: Task): boolean {
-  return store.isCompletedFor(task, now.value)
+  return store.isCompletedFor(task, referenceDate.value)
 }
 
-const completed = computed(() => store.tasks.filter(isCompleted))
-const pending = computed(() => store.tasks.filter((task) => !isCompleted(task)))
+// Tasks created after the browsed period never had a chance to be done, so they
+// must not count towards it.
+const visibleTasks = computed(() =>
+  store.tasks.filter((task) => store.existsIn(task, referenceDate.value)),
+)
+
+const completed = computed(() => visibleTasks.value.filter(isCompleted))
+const pending = computed(() => visibleTasks.value.filter((task) => !isCompleted(task)))
 
 const progress = computed(() => {
-  if (store.tasks.length === 0) return 0
-  return Math.round((completed.value.length / store.tasks.length) * 100)
+  if (visibleTasks.value.length === 0) return 0
+  return Math.round((completed.value.length / visibleTasks.value.length) * 100)
 })
 
 const pendingByFrequency = computed(() =>
@@ -47,7 +54,9 @@ function groupLabel(frequency: TaskFrequency): string {
   </div>
 
   <template v-if="store.tasks.length">
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+    <PeriodSelector />
+
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
       <div class="dash-card">
         <span class="dash-label">Concluidas</span>
         <span class="dash-value text-success">{{ completed.length }}</span>
@@ -58,13 +67,15 @@ function groupLabel(frequency: TaskFrequency): string {
       </div>
       <div class="dash-card">
         <span class="dash-label">Total de tarefas</span>
-        <span class="dash-value">{{ store.tasks.length }}</span>
+        <span class="dash-value">{{ visibleTasks.length }}</span>
       </div>
     </div>
 
     <div class="mt-6">
       <div class="flex items-center justify-between mb-1.5">
-        <span class="text-[0.8125rem] font-medium text-text-secondary">Progresso do periodo</span>
+        <span class="text-[0.8125rem] font-medium text-text-secondary">
+          {{ isToday ? 'Progresso do periodo' : `Progresso em ${formatDate(referenceDate)}` }}
+        </span>
         <span class="text-[0.8125rem] font-semibold text-text">{{ progress }}%</span>
       </div>
       <div class="h-2 w-full bg-surface-active rounded-full overflow-hidden">
@@ -76,7 +87,9 @@ function groupLabel(frequency: TaskFrequency): string {
     </div>
 
     <h2 class="mt-8 mb-3">Pendentes</h2>
-    <p v-if="pendingByFrequency.length === 0">Tudo em dia por aqui.</p>
+    <p v-if="pendingByFrequency.length === 0">
+      {{ isToday ? 'Tudo em dia por aqui.' : 'Tudo concluido neste dia.' }}
+    </p>
     <div v-for="group in pendingByFrequency" :key="group.frequency" class="dash-section">
       <div class="flex items-center gap-2 mb-2">
         <FrequencyBadge :frequency="group.frequency" />
@@ -90,7 +103,8 @@ function groupLabel(frequency: TaskFrequency): string {
           <TaskCheckbox
             :task="task"
             :completed="false"
-            @toggle="store.toggleCompletion(task.id, now)"
+            :period-label="formatDate(referenceDate)"
+            @toggle="store.toggleCompletion(task.id, referenceDate)"
           />
           <span class="text-sm text-text-secondary">{{ task.title }}</span>
         </li>

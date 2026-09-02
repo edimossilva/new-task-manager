@@ -66,6 +66,16 @@ export class TaskUseCases {
     if (!task) return { success: false, error: 'Tarefa nao encontrada.' }
 
     const key = periodKey(task.frequency, referenceDate)
+
+    // Writing a future key would break the "rollover is derived, never written"
+    // invariant: the task would silently read as already done once that period
+    // arrives. Comparing keys lexicographically is safe because both are in the
+    // same frequency's zero-padded format, where lexicographic order is
+    // chronological -- including across ISO week-years (2025-W52 < 2026-W01).
+    if (key > periodKey(task.frequency, new Date())) {
+      return { success: false, error: 'Nao e possivel concluir um periodo futuro.' }
+    }
+
     const completions = task.completions.includes(key)
       ? task.completions.filter((completion) => completion !== key)
       : this.withCompletion(task.completions, key)
@@ -86,8 +96,21 @@ export class TaskUseCases {
     return [...others, key].sort()
   }
 
-  /** Tasks still open for the period containing `referenceDate`. */
+  /**
+   * Whether the task already existed in the period containing `referenceDate`.
+   *
+   * Browsing back to a month before a task was created would otherwise show it
+   * as not done, counting work that was impossible against that period.
+   */
+  existsIn(task: Task, referenceDate: Date = new Date()): boolean {
+    return periodKey(task.frequency, task.createdAt) <= periodKey(task.frequency, referenceDate)
+  }
+
+  /** Tasks that existed in the period containing `referenceDate` and are still open. */
   pendingFor(referenceDate: Date = new Date()): Task[] {
-    return this.taskRepo.getAll().filter((task) => !this.isCompletedFor(task, referenceDate))
+    return this.taskRepo
+      .getAll()
+      .filter((task) => this.existsIn(task, referenceDate))
+      .filter((task) => !this.isCompletedFor(task, referenceDate))
   }
 }

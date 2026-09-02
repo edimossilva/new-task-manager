@@ -1,18 +1,26 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import type { Task, TaskFrequency } from '@/entities'
-import { FREQUENCIES, FREQUENCY_LABELS, FREQUENCY_ORDER, formatPeriodLabel } from '@/entities'
+import {
+  FREQUENCIES,
+  FREQUENCY_LABELS,
+  FREQUENCY_ORDER,
+  formatDate,
+  formatPeriodLabel,
+  matchesFrequency,
+} from '@/entities'
 import { useTaskStore } from '@/stores/task-store'
-import { useCurrentPeriod } from '@/composables/use-current-period'
+import { usePeriodSelection } from '@/composables/use-period-selection'
 import { useSortable } from '@/composables/use-sortable'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FrequencyBadge from '@/components/FrequencyBadge.vue'
+import PeriodSelector from '@/components/PeriodSelector.vue'
 import TaskCheckbox from '@/components/TaskCheckbox.vue'
 
 type StatusFilter = 'all' | 'pending' | 'completed'
 
 const store = useTaskStore()
-const { now } = useCurrentPeriod()
+const { referenceDate, today } = usePeriodSelection()
 
 const frequencyFilter = ref<TaskFrequency | 'all'>('all')
 const statusFilter = ref<StatusFilter>('all')
@@ -20,16 +28,25 @@ const statusFilter = ref<StatusFilter>('all')
 const confirmDialog = ref<InstanceType<typeof ConfirmDialog>>()
 const pendingDeleteId = ref<string>()
 
+/**
+ * The latest completion written under the task's CURRENT frequency.
+ *
+ * A frequency change leaves keys of the old format behind, and mixed formats do
+ * not sort chronologically -- within one year a weekly key outsorts every daily
+ * key -- so the raw last element can be a stale key from the old format.
+ */
 function lastCompletionKey(task: Task): string | undefined {
-  return task.completions[task.completions.length - 1]
+  const own = task.completions.filter((key) => matchesFrequency(task.frequency, key))
+  return own[own.length - 1]
 }
 
 function isCompleted(task: Task): boolean {
-  return store.isCompletedFor(task, now.value)
+  return store.isCompletedFor(task, referenceDate.value)
 }
 
 const filteredTasks = computed(() =>
   store.tasks.filter((task) => {
+    if (!store.existsIn(task, referenceDate.value)) return false
     if (frequencyFilter.value !== 'all' && task.frequency !== frequencyFilter.value) return false
     if (statusFilter.value === 'pending') return !isCompleted(task)
     if (statusFilter.value === 'completed') return isCompleted(task)
@@ -59,7 +76,9 @@ function handleDelete() {
 function lastCompletion(task: Task): string {
   const key = lastCompletionKey(task)
   if (!key) return '-'
-  return formatPeriodLabel(task.frequency, key, now.value)
+  // The real today, not the browsed date: otherwise an August key would be
+  // labelled 'Hoje' while browsing August.
+  return formatPeriodLabel(task.frequency, key, today.value)
 }
 </script>
 
@@ -70,6 +89,8 @@ function lastCompletion(task: Task): string {
   </div>
 
   <p v-if="store.error" class="error">{{ store.error }}</p>
+
+  <PeriodSelector v-if="store.tasks.length" />
 
   <div v-if="store.tasks.length" class="flex flex-wrap items-end gap-4 mb-2">
     <div>
@@ -118,7 +139,8 @@ function lastCompletion(task: Task): string {
           <TaskCheckbox
             :task="task"
             :completed="isCompleted(task)"
-            @toggle="store.toggleCompletion(task.id, now)"
+            :period-label="formatDate(referenceDate)"
+            @toggle="store.toggleCompletion(task.id, referenceDate)"
           />
         </td>
         <td :class="{ 'line-through text-text-muted': isCompleted(task) }">

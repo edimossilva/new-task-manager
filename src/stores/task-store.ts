@@ -25,6 +25,10 @@ export const useTaskStore = defineStore('task', () => {
     return createUseCases().isCompletedFor(task, referenceDate)
   }
 
+  function existsIn(task: Task, referenceDate: Date): boolean {
+    return createUseCases().existsIn(task, referenceDate)
+  }
+
   function create(input: CreateTaskInput): boolean {
     const result = createUseCases().create(input)
     error.value = result.error ?? null
@@ -58,7 +62,12 @@ export const useTaskStore = defineStore('task', () => {
   function toggleCompletion(id: string, referenceDate: Date): boolean {
     const result = createUseCases().toggleCompletion(id, referenceDate)
     error.value = result.error ?? null
-    if (result.success) loadAll()
+    if (result.success) {
+      loadAll()
+    } else if (result.error) {
+      // A refused toggle has no visible effect otherwise -- the box just snaps back.
+      useNotificationStore().error(result.error)
+    }
     return result.success
   }
 
@@ -68,6 +77,7 @@ export const useTaskStore = defineStore('task', () => {
     loadAll,
     getById,
     isCompletedFor,
+    existsIn,
     create,
     update,
     remove,
