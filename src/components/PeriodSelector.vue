@@ -163,12 +163,12 @@ function inRange(date: Date): boolean {
 
 .arrow {
   @apply flex items-center justify-center w-11 h-11 shrink-0 text-xl leading-none
-         text-ink bg-transparent border border-transparent rounded-sm cursor-pointer
+         text-fg bg-transparent border border-transparent rounded-sm cursor-pointer
          transition-[color,background,border-color] duration-[120ms];
   -webkit-tap-highlight-color: transparent;
 }
 .arrow:hover:not(:disabled) {
-  @apply bg-paper-sunk border-rule-strong;
+  @apply bg-well border-line-strong;
 }
 .arrow:disabled {
   @apply opacity-25 cursor-not-allowed;
@@ -176,17 +176,14 @@ function inRange(date: Date): boolean {
 
 .month-btn {
   @apply flex items-baseline gap-1.5 min-h-11 px-1 font-display text-[1.15rem] font-semibold
-         tracking-[-0.01em] text-ink bg-transparent border-none cursor-pointer;
-  font-variation-settings:
-    'SOFT' 20,
-    'WONK' 1;
+         tracking-[-0.01em] text-fg bg-transparent border-none cursor-pointer;
 }
 .month-btn:hover {
-  @apply text-accent-deep;
+  @apply text-accent-text;
 }
 
 .month-caret {
-  @apply text-[0.6rem] text-ink-faint transition-transform duration-200;
+  @apply text-[0.6rem] text-fg-faint transition-transform duration-200;
 }
 .month-caret.open {
   @apply rotate-180;
@@ -194,7 +191,7 @@ function inRange(date: Date): boolean {
 
 .today-btn {
   @apply ml-auto shrink-0 min-h-11 px-3 font-mono text-[0.625rem] font-medium uppercase
-         tracking-[0.12em] text-ink bg-paper-raised border border-ink rounded-sm
+         tracking-[0.12em] text-fg bg-panel border border-fg rounded-sm
          cursor-pointer transition-opacity duration-[120ms];
 }
 .today-btn:disabled {
@@ -208,50 +205,50 @@ function inRange(date: Date): boolean {
 
 .chip {
   @apply w-full flex flex-col items-center justify-center gap-0.5 py-1.5 min-h-14
-         bg-paper-raised border border-rule-strong rounded-sm cursor-pointer
+         bg-panel border border-line-strong rounded-sm cursor-pointer
          transition-[background,border-color,color,transform] duration-[120ms];
   -webkit-tap-highlight-color: transparent;
 }
 .chip:hover:not(:disabled):not(.is-selected) {
-  @apply border-ink bg-paper-sunk;
+  @apply border-fg bg-well;
 }
 .chip:disabled {
   @apply opacity-30 cursor-not-allowed;
 }
 
 .chip-dow {
-  @apply font-mono text-[0.5625rem] font-medium uppercase tracking-[0.1em] text-ink-faint;
+  @apply font-mono text-[0.5625rem] font-medium uppercase tracking-[0.1em] text-fg-faint;
 }
 
 .chip-num {
-  @apply font-display text-[1.05rem] leading-none font-semibold text-ink;
+  @apply font-display text-[1.05rem] leading-none font-semibold text-fg;
 }
 
 /* Today is marked in flare even when it is not the day being viewed. */
 .chip.is-today .chip-num {
-  @apply text-accent-deep;
+  @apply text-accent-text;
 }
 .chip.is-today {
   @apply border-accent;
 }
 
 .chip.is-selected {
-  @apply bg-ink border-ink;
-  box-shadow: var(--shadow-stamp-sm);
+  @apply bg-fg border-fg;
+  box-shadow: var(--panel-shadow);
 }
 .chip.is-selected .chip-dow {
-  @apply text-paper opacity-70;
+  @apply text-void opacity-70;
 }
 .chip.is-selected .chip-num {
-  @apply text-paper;
+  @apply text-void;
 }
 .chip.is-selected.is-today .chip-num {
   @apply text-accent;
 }
 
 .jump {
-  @apply flex flex-wrap items-end gap-3 mt-3 p-3 bg-paper-raised
-         border border-rule-strong rounded-sm;
+  @apply flex flex-wrap items-end gap-3 mt-3 p-3 bg-panel
+         border border-line-strong rounded-sm;
 }
 
 .jump-enter-active,

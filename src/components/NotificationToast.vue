@@ -39,15 +39,15 @@ const store = useNotificationStore()
 .toast {
   @apply pointer-events-auto w-full px-4 py-3 text-left font-sans text-sm font-medium
          border-2 rounded-sm cursor-pointer;
-  box-shadow: var(--shadow-stamp-sm);
+  box-shadow: var(--panel-shadow);
 }
 
 .toast.success {
-  @apply bg-paper-raised text-ink border-ink;
+  @apply bg-panel text-fg border-fg;
 }
 
 .toast.error {
-  @apply bg-alarm text-paper border-ink;
+  @apply bg-alarm text-void border-fg;
 }
 
 .toast-enter-active,

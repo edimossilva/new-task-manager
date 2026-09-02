@@ -65,20 +65,20 @@ function isLate(task: Task): boolean {
 @reference "../assets/main.css";
 
 .group {
-  @apply mt-3 px-4 py-3 bg-paper-raised border border-rule-strong rounded-sm;
+  @apply mt-3 px-4 py-3 bg-panel border border-line-strong rounded-sm;
 }
 
 .group-head {
-  @apply flex items-center justify-between gap-2 pb-2 mb-1 border-b border-rule;
+  @apply flex items-center justify-between gap-2 pb-2 mb-1 border-b border-line;
 }
 
 .group-count {
-  @apply text-[0.8125rem] text-ink-faint;
+  @apply text-[0.8125rem] text-fg-faint;
 }
 
 /* Ruled rows, hairline between, like a printed list. */
 .row {
-  @apply flex items-center gap-3 py-2.5 border-b border-rule;
+  @apply flex items-center gap-3 py-2.5 border-b border-line;
 }
 .row:last-child {
   @apply border-b-0 pb-0;
@@ -89,16 +89,16 @@ function isLate(task: Task): boolean {
 }
 
 .row-title {
-  @apply text-[0.9375rem] leading-snug text-ink break-words;
+  @apply text-[0.9375rem] leading-snug text-fg break-words;
 }
 
 .row-title.struck {
-  @apply text-ink-faint line-through decoration-[1.5px];
-  text-decoration-color: var(--color-moss);
+  @apply text-fg-faint line-through decoration-[1.5px];
+  text-decoration-color: var(--color-done);
 }
 
 .late {
   @apply shrink-0 font-mono text-[0.625rem] font-medium uppercase tracking-[0.1em]
-         text-paper bg-accent-deep px-1.5 py-0.5 rounded-[2px];
+         text-void bg-accent-text px-1.5 py-0.5 rounded-[2px];
 }
 </style>

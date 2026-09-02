@@ -89,22 +89,36 @@ layers.
   document limit. Changing a task's
   frequency leaves the old keys in place: they can never match the new format, so the task correctly
   shows as pending, and keeping them preserves the history for free.
+- **Design tokens are ROLES, never colour names** -- `void` (ground), `panel`, `well`, `fg`,
+  `fg-soft`, `fg-faint`, `line`, `line-strong`. The same token is deep navy in one theme and cool
+  aluminium in another, so `bg-paper` would have been a lie. Tailwind 4 **errors on an unknown
+  utility class at build time**, which makes a token rename safe: a missed call site fails the
+  build rather than silently losing its style.
+- **Five themes** (`src/entities/theme.ts`), each a complete instrument panel -- ground,
+  foreground, line weight, geometry (`--radius-*`), shadow language (`--panel-shadow`) and
+  atmosphere (`--tex`, painted by `body::before`). `@theme` holds the default (Holograma); each
+  `[data-theme='...']` block in `main.css` overrides the same role tokens. `terminal` also swaps
+  `--font-sans` to the mono face, so the whole panel becomes one readout.
 - **The ink palette** (`src/entities/palette.ts`) is the single source of truth for colour:
-  twenty named inks, each with `base`, `deep` and `dim`. Three values because one hex cannot do
-  three jobs -- `base` for fills, **`deep` for the ink as TEXT on paper** (several inks are
-  unreadable at base strength at 11px), `dim` for washes. Every `deep` is verified at >= 4.5:1 on
-  paper, and **anywhere paper-coloured text sits on the accent it must use `deep`, not `base`**
-  (the `Atrasada` tag) -- amber at base is 2.05:1. Only ink **names** are persisted, never hex, so
-  this table can be retuned without migrating a document. It deliberately lives in TS rather than
-  CSS: duplicating twenty triples into `@theme` would guarantee drift.
-- **The accent is user-chosen** (`src/stores/appearance-store.ts`). The store writes the picked
-  ink's three values onto `:root` as `--color-accent{,-deep,-dim}`, which every accent utility in
-  the app resolves -- one assignment retints the whole interface. It persists to
+  twenty named inks, each with **four** values. One hex cannot do four jobs -- `base` for fills,
+  `deep` for the ink as TEXT on a LIGHT ground, `bright` for TEXT on a DARK ground, `dim` for
+  washes. `bright` exists because darkening for contrast only works one way: `deep` on near-black
+  is *less* visible than `base`, not more. Themes choose between them through
+  **`--color-accent-text`** (`bright` by default, `deep` under `[data-theme='alloy']`), so no
+  component ever needs to know whether the ground is light or dark. Every value is verified at
+  >= 4.5:1 against all five grounds. **Anywhere ground-coloured text sits on the accent, use
+  `accent-text`, not `accent`** -- amber at base strength is 2.05:1. Only ink **names** are
+  persisted, never hex. The table lives in TS rather than CSS: duplicating twenty quadruples into
+  `@theme` would guarantee drift.
+- **Theme and accent are both user-chosen** (`src/stores/appearance-store.ts`), and orthogonal:
+  any of the nineteen accents composes with any of the five themes. The store writes the picked
+  ink's values onto `:root` as `--color-accent{,-bright,-deep,-dim}` and sets `data-theme` on the
+  root element (also syncing the `theme-color` meta so mobile browser chrome follows). It persists to
   `users/{uid}/settings/appearance`, modelled as a one-document collection so it rides the generic
   collection-shaped repository with no new machinery. `load()` runs inside `setupSession` **after**
   the repositories initialize and therefore before the app mounts, so there is no flash of the
   default; `reset()` runs on sign-out so the next user does not inherit it. `ACCENT_CHOICES`
-  excludes `ink`: a black accent is degenerate, and `text-accent` on `bg-ink` would vanish.
+  excludes `ink`: a black accent is degenerate, and it would vanish against a dark ground.
 - **Categories** (`src/entities/category.ts`) are a full entity with their own collection, CRUD
   views and routes, mirroring `controle-mensal`'s `payment-categories`. A task's `categoryId` is
   **optional** -- tasks predate categories and must keep working without one.

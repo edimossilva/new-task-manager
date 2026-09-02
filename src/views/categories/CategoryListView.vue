@@ -73,7 +73,7 @@ function handleDelete() {
       <tbody>
         <tr v-for="category in sortedItems" :key="category.id">
           <td><CategoryBadge :category="category" /></td>
-          <td class="text-ink-faint">{{ category.description || '-' }}</td>
+          <td class="text-fg-faint">{{ category.description || '-' }}</td>
           <td class="figure">{{ store.countTasks(category.id) }}</td>
           <td>
             <div class="actions">
@@ -107,20 +107,20 @@ function handleDelete() {
 @reference "../../assets/main.css";
 
 .card {
-  @apply flex items-start gap-3 px-3.5 py-3 mb-2 bg-paper-raised
-         border border-rule-strong rounded-sm;
+  @apply flex items-start gap-3 px-3.5 py-3 mb-2 bg-panel
+         border border-line-strong rounded-sm;
 }
 
 .card-desc {
-  @apply mt-1 text-[0.8125rem] leading-snug text-ink-faint break-words;
+  @apply mt-1 text-[0.8125rem] leading-snug text-fg-faint break-words;
 }
 
 .card-meta {
-  @apply mt-1 text-[0.6875rem] text-ink-faint;
+  @apply mt-1 text-[0.6875rem] text-fg-faint;
 }
 
 .empty {
-  @apply mt-6 px-4 py-8 text-center bg-paper-raised border border-dashed border-rule-strong
+  @apply mt-6 px-4 py-8 text-center bg-panel border border-dashed border-line-strong
          rounded-sm;
 }
 </style>

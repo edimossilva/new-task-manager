@@ -101,12 +101,12 @@ const firstName = computed(() => authStore.user?.displayName?.split(' ')[0] ?? '
 @reference "../assets/main.css";
 
 .eyebrow {
-  @apply font-mono text-[0.625rem] font-medium uppercase tracking-[0.16em] text-accent-deep mb-1;
+  @apply font-mono text-[0.625rem] font-medium uppercase tracking-[0.16em] text-accent-text mb-1;
 }
 
 .meter {
-  @apply px-4 py-3.5 bg-paper-raised border-2 border-ink rounded-sm;
-  box-shadow: var(--shadow-stamp-sm);
+  @apply px-4 py-3.5 bg-panel border-2 border-fg rounded-sm;
+  box-shadow: var(--panel-shadow);
 }
 
 .meter-head {
@@ -114,21 +114,22 @@ const firstName = computed(() => authStore.user?.displayName?.split(' ')[0] ?? '
 }
 
 .meter-figure {
-  @apply text-[1.75rem] leading-none font-medium text-ink;
+  @apply text-[1.9rem] leading-none font-medium text-fg;
+  text-shadow: 0 0 18px var(--color-accent-dim);
 }
 
 .meter-slash {
-  @apply text-ink-faint mx-0.5;
+  @apply text-fg-faint mx-0.5;
 }
 
 .meter-pct {
-  @apply text-[0.8125rem] text-ink-soft;
+  @apply text-[0.8125rem] text-fg-soft;
 }
 
 /* Hatched track so an empty meter still reads as a scale, not a void. */
 .meter-track {
-  @apply relative h-2.5 w-full mt-2.5 border border-ink overflow-hidden;
-  background-image: repeating-linear-gradient(45deg, transparent 0 3px, var(--color-rule) 3px 4px);
+  @apply relative h-2.5 w-full mt-2.5 border border-fg overflow-hidden;
+  background-image: repeating-linear-gradient(45deg, transparent 0 3px, var(--color-line) 3px 4px);
 }
 
 .meter-fill {
@@ -136,22 +137,19 @@ const firstName = computed(() => authStore.user?.displayName?.split(' ')[0] ?? '
 }
 
 .meter-label {
-  @apply mt-2 font-mono text-[0.625rem] font-medium uppercase tracking-[0.12em] text-ink-faint;
+  @apply mt-2 font-mono text-[0.625rem] font-medium uppercase tracking-[0.12em] text-fg-faint;
 }
 
 .section-empty {
-  @apply mt-1 text-[0.875rem] text-ink-faint;
+  @apply mt-1 text-[0.875rem] text-fg-faint;
 }
 
 .empty {
   @apply flex flex-col items-center mt-10 px-5 py-10 text-center
-         bg-paper-raised border border-dashed border-rule-strong rounded-sm;
+         bg-panel border border-dashed border-line-strong rounded-sm;
 }
 
 .empty-line {
-  @apply font-display text-[1.25rem] font-semibold text-ink;
-  font-variation-settings:
-    'SOFT' 20,
-    'WONK' 1;
+  @apply font-display text-[1.25rem] font-semibold text-fg;
 }
 </style>

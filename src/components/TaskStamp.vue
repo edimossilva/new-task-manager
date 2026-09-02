@@ -15,14 +15,17 @@ defineEmits<{ toggle: [] }>()
   <button
     type="button"
     role="checkbox"
-    class="stamp"
+    class="lock"
     :aria-checked="completed"
     :aria-label="`${task.title} (${FREQUENCY_LABELS[task.frequency]}) em ${periodLabel}`"
     @click="$emit('toggle')"
   >
-    <span class="stamp-box">
-      <svg class="stamp-mark" viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M4 12.5 L9.5 18 L20 6.5" />
+    <span class="ring">
+      <svg class="dial" viewBox="0 0 32 32" aria-hidden="true">
+        <!-- Track, then the arc that sweeps closed, then the lock mark. -->
+        <circle class="track" cx="16" cy="16" r="13" />
+        <circle class="sweep" cx="16" cy="16" r="13" />
+        <path class="mark" d="M9.5 16.5 L14 21 L22.5 11.5" />
       </svg>
     </span>
   </button>
@@ -31,69 +34,109 @@ defineEmits<{ toggle: [] }>()
 <style scoped>
 @reference "../assets/main.css";
 
-/* 44px hit area around a 26px mark: thumb-sized without looking oversized. */
-.stamp {
-  @apply flex items-center justify-center w-11 h-11 shrink-0 -m-2.5 bg-transparent
+/* 44px hit area around a 30px dial: thumb-sized without looking oversized. */
+.lock {
+  @apply flex items-center justify-center w-11 h-11 shrink-0 -m-2 bg-transparent
          border-none cursor-pointer;
   -webkit-tap-highlight-color: transparent;
 }
 
-.stamp-box {
-  @apply relative flex items-center justify-center w-[26px] h-[26px]
-         border-2 border-ink rounded-[2px] bg-paper-raised
-         transition-[background-color,border-color,transform] duration-[140ms];
+.ring {
+  @apply relative flex items-center justify-center w-[30px] h-[30px] rounded-full
+         transition-[background,box-shadow] duration-[200ms];
 }
 
-.stamp:hover .stamp-box {
-  @apply bg-accent-dim;
+.lock:hover .ring {
+  background: var(--color-accent-dim);
 }
 
-.stamp:active .stamp-box {
+.lock:active .ring {
   @apply scale-90;
 }
 
-.stamp:focus-visible {
+.lock:focus-visible {
   @apply outline-none;
 }
-.stamp:focus-visible .stamp-box {
+.lock:focus-visible .ring {
   box-shadow: 0 0 0 3px var(--color-accent-dim);
 }
 
-.stamp-mark {
-  @apply w-[18px] h-[18px];
+.dial {
+  @apply w-[30px] h-[30px] -rotate-90;
+}
+
+.track {
   fill: none;
-  stroke: var(--color-paper);
-  stroke-width: 3.4;
-  stroke-linecap: square;
-  stroke-linejoin: miter;
-  stroke-dasharray: 32;
-  stroke-dashoffset: 32;
+  stroke: var(--color-line-strong);
+  stroke-width: 2;
 }
 
-/* Struck: the box inks over and the mark presses in, off-square like a stamp. */
-.stamp[aria-checked='true'] .stamp-box {
-  @apply bg-moss border-moss;
-  animation: press 260ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+.sweep {
+  fill: none;
+  stroke: var(--color-done);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  /* 2*pi*13 ~= 81.7 */
+  stroke-dasharray: 81.7;
+  stroke-dashoffset: 81.7;
 }
 
-.stamp[aria-checked='true'] .stamp-mark {
-  animation: ink 220ms 60ms ease-out both;
+.mark {
+  fill: none;
+  stroke: var(--color-done);
+  stroke-width: 2.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 22;
+  stroke-dashoffset: 22;
+  transform-origin: center;
+  transform: rotate(90deg);
 }
 
-@keyframes press {
-  0% {
-    transform: scale(0.72) rotate(-9deg);
+/*
+ * Locked: the arc sweeps closed, the mark draws in behind it, and the whole
+ * ring blooms once. Three staggered steps out of one state change.
+ */
+.lock[aria-checked='true'] .sweep {
+  animation: sweep 340ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.lock[aria-checked='true'] .mark {
+  animation: draw 260ms 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.lock[aria-checked='true'] .ring {
+  animation: bloom 620ms 140ms ease-out both;
+}
+
+@keyframes sweep {
+  to {
+    stroke-dashoffset: 0;
   }
-  60% {
-    transform: scale(1.08) rotate(-4deg);
+}
+
+@keyframes draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes bloom {
+  0% {
+    box-shadow: 0 0 0 0 var(--color-done-dim);
+  }
+  40% {
+    box-shadow: 0 0 14px 3px var(--color-done-dim);
   }
   100% {
-    transform: scale(1) rotate(-3deg);
+    box-shadow: 0 0 0 0 transparent;
   }
 }
 
-@keyframes ink {
-  to {
+/* With motion reduced the state still has to be unmistakable, not animated. */
+@media (prefers-reduced-motion: reduce) {
+  .lock[aria-checked='true'] .sweep,
+  .lock[aria-checked='true'] .mark {
     stroke-dashoffset: 0;
   }
 }

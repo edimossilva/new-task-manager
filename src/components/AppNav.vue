@@ -2,7 +2,7 @@
 import { RouterLink, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth-store'
 import { usePeriodStore } from '@/stores/period-store'
-import AccentPicker from '@/components/AccentPicker.vue'
+import AppearancePicker from '@/components/AppearancePicker.vue'
 
 const authStore = useAuthStore()
 const periodStore = usePeriodStore()
@@ -22,7 +22,9 @@ async function handleSignOut() {
   <!-- Masthead: identity and account. On a phone it carries no navigation. -->
   <header class="masthead">
     <div class="masthead-inner">
-      <RouterLink to="/" class="wordmark"> Tarefas<span class="wordmark-dot">.</span> </RouterLink>
+      <RouterLink to="/" class="wordmark">
+        Tarefas<span class="wordmark-dot" aria-hidden="true"></span>
+      </RouterLink>
 
       <nav class="hidden sm:flex items-center gap-1 ml-4">
         <RouterLink to="/" class="nav-link nav-link-exact">Resumo</RouterLink>
@@ -31,12 +33,12 @@ async function handleSignOut() {
       </nav>
 
       <div v-if="authStore.user" class="flex items-center gap-2 ml-auto shrink-0">
-        <AccentPicker />
+        <AppearancePicker />
         <img
           v-if="authStore.user.photoURL"
           :src="authStore.user.photoURL"
           :alt="authStore.user.displayName ?? 'Avatar'"
-          class="w-7 h-7 rounded-full border border-ink"
+          class="w-7 h-7 rounded-full border border-fg"
           referrerpolicy="no-referrer"
         />
         <button type="button" class="signout" @click="handleSignOut">Sair</button>
@@ -73,7 +75,9 @@ async function handleSignOut() {
 @reference "../assets/main.css";
 
 .masthead {
-  @apply sticky top-0 z-40 bg-paper border-b-2 border-ink;
+  @apply sticky top-0 z-40 border-b border-line-strong;
+  background: color-mix(in srgb, var(--color-void) 86%, transparent);
+  backdrop-filter: blur(12px);
   padding-top: env(safe-area-inset-top);
 }
 
@@ -82,55 +86,58 @@ async function handleSignOut() {
 }
 
 /* Fraunces at a display size with the wonk axis on: the one typographic flourish. */
+/* Chakra Petch, letterspaced wide: reads as a device label, not a logotype. */
 .wordmark {
-  @apply font-display text-[1.35rem] leading-none font-black tracking-[-0.03em]
-         text-ink no-underline shrink-0;
-  font-variation-settings:
-    'SOFT' 0,
-    'WONK' 1;
+  @apply font-display text-[1.05rem] leading-none font-bold uppercase tracking-[0.16em]
+         text-fg no-underline shrink-0;
 }
 
 .wordmark:hover {
-  @apply text-ink;
+  @apply text-fg;
 }
 
+/* A lit indicator standing in for the full stop. */
 .wordmark-dot {
-  @apply text-accent;
+  @apply inline-block w-1.5 h-1.5 rounded-full align-middle ml-1;
+  background: var(--color-accent);
+  box-shadow: 0 0 8px var(--color-accent);
 }
 
 .nav-link {
   @apply px-2.5 py-1.5 font-mono text-[0.6875rem] font-medium uppercase tracking-[0.12em]
-         text-ink-soft no-underline rounded-sm whitespace-nowrap
+         text-fg-soft no-underline rounded-sm whitespace-nowrap
          transition-colors duration-[120ms];
 }
 .nav-link:hover {
-  @apply text-ink bg-paper-sunk;
+  @apply text-fg bg-well;
 }
 .nav-link.router-link-active:not(.nav-link-exact),
 .nav-link-exact.router-link-exact-active {
-  @apply text-ink bg-accent-dim;
+  @apply text-accent-text bg-accent-dim;
   box-shadow: inset 0 -2px 0 var(--color-accent);
 }
 
 .signout {
   @apply min-h-9 px-2.5 font-mono text-[0.625rem] font-medium uppercase tracking-[0.12em]
-         text-ink-faint bg-transparent border border-rule-strong rounded-sm
+         text-fg-faint bg-transparent border border-line-strong rounded-sm
          cursor-pointer whitespace-nowrap transition-colors duration-[120ms];
 }
 .signout:hover {
-  @apply text-alarm border-alarm;
+  color: var(--color-alarm);
+  border-color: var(--color-alarm);
 }
 
 .dock {
-  @apply fixed bottom-0 left-0 right-0 z-40 flex items-stretch
-         bg-paper border-t-2 border-ink;
+  @apply fixed bottom-0 left-0 right-0 z-40 flex items-stretch border-t border-line-strong;
+  background: color-mix(in srgb, var(--color-void) 88%, transparent);
+  backdrop-filter: blur(14px);
   padding-bottom: env(safe-area-inset-bottom);
 }
 
 .dock-link {
   @apply flex-1 flex flex-col items-center justify-center gap-0.5 py-2 min-h-14
          font-mono text-[0.625rem] font-medium uppercase tracking-[0.1em]
-         text-ink-faint no-underline transition-colors duration-[120ms];
+         text-fg-faint no-underline transition-colors duration-[120ms];
 }
 
 .dock-link svg {
@@ -140,7 +147,7 @@ async function handleSignOut() {
 
 .dock-link.router-link-active:not(.dock-link-exact),
 .dock-link-exact.router-link-exact-active {
-  @apply text-ink bg-accent-dim;
+  @apply text-accent-text bg-accent-dim;
   box-shadow: inset 0 2px 0 var(--color-accent);
 }
 </style>

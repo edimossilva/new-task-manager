@@ -63,13 +63,13 @@ const group = props.name ?? useId()
 .chip.is-on {
   @apply scale-105;
   box-shadow:
-    0 0 0 2px var(--color-paper-raised),
-    0 0 0 4px var(--color-ink);
+    0 0 0 2px var(--color-panel),
+    0 0 0 4px var(--color-fg);
 }
 
 .swatch input:focus-visible + .chip {
   box-shadow:
-    0 0 0 2px var(--color-paper-raised),
+    0 0 0 2px var(--color-panel),
     0 0 0 4px var(--color-accent);
 }
 </style>

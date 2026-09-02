@@ -1,5 +1,7 @@
 import type { InkName } from './palette'
 import { DEFAULT_ACCENT, INK_NAMES } from './palette'
+import type { ThemeName } from './theme'
+import { DEFAULT_THEME } from './theme'
 
 /**
  * Appearance lives as a single document so it rides the existing generic
@@ -10,6 +12,7 @@ export const APPEARANCE_ID = 'appearance'
 export interface Appearance {
   id: string
   accent: InkName
+  theme: ThemeName
 }
 
 /**
@@ -21,6 +24,9 @@ export interface Appearance {
  */
 export const ACCENT_CHOICES: InkName[] = INK_NAMES.filter((name) => name !== 'ink')
 
-export function createAppearance(accent: InkName = DEFAULT_ACCENT): Appearance {
-  return { id: APPEARANCE_ID, accent }
+export function createAppearance(
+  accent: InkName = DEFAULT_ACCENT,
+  theme: ThemeName = DEFAULT_THEME,
+): Appearance {
+  return { id: APPEARANCE_ID, accent, theme }
 }

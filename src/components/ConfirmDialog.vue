@@ -23,7 +23,7 @@ defineExpose({ open })
 <template>
   <dialog ref="dialogRef">
     <p class="dialog-title"><slot>Tem certeza que deseja excluir?</slot></p>
-    <p class="text-[0.8125rem] text-ink-faint">Esta acao nao pode ser desfeita.</p>
+    <p class="text-[0.8125rem] text-fg-faint">Esta acao nao pode ser desfeita.</p>
     <div class="dialog-actions">
       <button type="button" class="btn btn-secondary" @click="close">Cancelar</button>
       <button type="button" class="btn btn-danger" @click="handleConfirm">Excluir</button>
@@ -35,9 +35,6 @@ defineExpose({ open })
 @reference "../assets/main.css";
 
 .dialog-title {
-  @apply font-display text-[1.15rem] leading-snug font-semibold text-ink mb-1;
-  font-variation-settings:
-    'SOFT' 20,
-    'WONK' 1;
+  @apply font-display text-[1.15rem] leading-snug font-semibold text-fg mb-1;
 }
 </style>

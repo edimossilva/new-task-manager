@@ -239,15 +239,15 @@ function lastCompletion(task: Task): string {
               @toggle="store.toggleCompletion(task.id, referenceDate)"
             />
           </td>
-          <td :class="{ 'text-ink-faint line-through': isCompleted(task) }">
-            <span class="text-ink">{{ task.title }}</span>
-            <span v-if="task.description" class="block text-xs text-ink-faint">
+          <td :class="{ 'text-fg-faint line-through': isCompleted(task) }">
+            <span class="text-fg">{{ task.title }}</span>
+            <span v-if="task.description" class="block text-xs text-fg-faint">
               {{ task.description }}
             </span>
           </td>
           <td>
             <CategoryBadge v-if="categoryOf(task)" :category="categoryOf(task)!" />
-            <span v-else class="text-ink-faint">-</span>
+            <span v-else class="text-fg-faint">-</span>
           </td>
           <td>
             <div class="flex items-center gap-1.5">
@@ -255,7 +255,7 @@ function lastCompletion(task: Task): string {
               <WeekdayBadge v-if="task.weekday" :weekday="task.weekday" />
             </div>
           </td>
-          <td :class="isLate(task) ? 'text-accent-deep font-semibold' : ''">
+          <td :class="isLate(task) ? 'text-accent-text font-semibold' : ''">
             {{ situacao(task) }}
           </td>
           <td class="figure text-[0.8125rem]">{{ lastCompletion(task) }}</td>
@@ -295,38 +295,38 @@ function lastCompletion(task: Task): string {
 @reference "../../assets/main.css";
 
 .card {
-  @apply flex items-start gap-3 px-3.5 py-3 mb-2 bg-paper-raised
-         border border-rule-strong rounded-sm;
+  @apply flex items-start gap-3 px-3.5 py-3 mb-2 bg-panel
+         border border-line-strong rounded-sm;
 }
 
 .card-title {
-  @apply text-[0.9375rem] leading-snug font-medium text-ink break-words;
+  @apply text-[0.9375rem] leading-snug font-medium text-fg break-words;
 }
 .card-title.struck {
-  @apply text-ink-faint line-through decoration-[1.5px];
-  text-decoration-color: var(--color-moss);
+  @apply text-fg-faint line-through decoration-[1.5px];
+  text-decoration-color: var(--color-done);
 }
 
 .card-desc {
-  @apply mt-0.5 text-[0.8125rem] leading-snug text-ink-faint break-words;
+  @apply mt-0.5 text-[0.8125rem] leading-snug text-fg-faint break-words;
 }
 
 .card-late {
   @apply font-mono text-[0.625rem] font-medium uppercase tracking-[0.1em]
-         text-paper bg-accent-deep px-1.5 py-0.5 rounded-[2px];
+         text-void bg-accent-text px-1.5 py-0.5 rounded-[2px];
 }
 
 .card-meta {
-  @apply text-[0.6875rem] text-ink-faint;
+  @apply text-[0.6875rem] text-fg-faint;
 }
 
 .empty {
-  @apply mt-6 px-4 py-8 text-center bg-paper-raised border border-dashed border-rule-strong
+  @apply mt-6 px-4 py-8 text-center bg-panel border border-dashed border-line-strong
          rounded-sm;
 }
 
 .hidden-note {
-  @apply mt-3 text-[0.75rem] text-ink-faint;
+  @apply mt-3 text-[0.75rem] text-fg-faint;
 }
 
 .card-enter-active,

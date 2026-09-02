@@ -77,11 +77,11 @@ function handleSubmit() {
 @reference "../../assets/main.css";
 
 .eyebrow {
-  @apply font-mono text-[0.625rem] font-medium uppercase tracking-[0.16em] text-accent-deep mb-1;
+  @apply font-mono text-[0.625rem] font-medium uppercase tracking-[0.16em] text-accent-text mb-1;
 }
 
 .swatch-label {
   @apply block font-mono text-[0.6875rem] font-medium uppercase tracking-[0.12em]
-         text-ink-soft mb-1.5;
+         text-fg-soft mb-1.5;
 }
 </style>

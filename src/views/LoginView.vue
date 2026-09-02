@@ -66,30 +66,31 @@ async function handleSignIn() {
 @reference "../assets/main.css";
 
 .card {
-  @apply w-full max-w-[380px] px-6 py-9 bg-paper-raised border-2 border-ink rounded-sm text-center;
-  box-shadow: var(--shadow-stamp);
+  @apply w-full max-w-[380px] px-6 py-9 bg-panel border-2 border-fg rounded-sm text-center;
+  box-shadow: var(--panel-shadow);
 }
 
 .eyebrow {
-  @apply font-mono text-[0.625rem] font-medium uppercase tracking-[0.18em] text-accent-deep;
+  @apply font-mono text-[0.625rem] font-medium uppercase tracking-[0.18em] text-accent-text;
 }
 
 .title {
-  @apply font-display text-[2.6rem] leading-none font-black tracking-[-0.04em] text-ink mt-2 mb-3;
-  font-variation-settings:
-    'SOFT' 0,
-    'WONK' 1;
+  @apply font-display text-[2.1rem] leading-none font-bold uppercase tracking-[0.1em]
+         text-fg mt-2 mb-3;
+  text-shadow: 0 0 26px var(--color-accent-dim);
 }
 
 .blurb {
-  @apply text-[0.875rem] leading-snug text-ink-soft mb-6;
+  @apply text-[0.875rem] leading-snug text-fg-soft mb-6;
 }
 
 .rules {
   @apply flex flex-col gap-1.5 mb-7;
 }
+/* Four rules for the four frequencies, drawing in on load. */
 .rules li {
-  @apply h-[3px] bg-ink origin-left;
+  @apply h-[2px] origin-left;
+  background: var(--color-line-strong);
   animation: draw 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 .rules li:nth-child(1) {
@@ -99,7 +100,9 @@ async function handleSignIn() {
   @apply w-3/4;
 }
 .rules li:nth-child(3) {
-  @apply w-1/2 bg-accent;
+  @apply w-1/2;
+  background: var(--color-accent);
+  box-shadow: 0 0 10px var(--color-accent);
 }
 .rules li:nth-child(4) {
   @apply w-1/4;
@@ -116,17 +119,19 @@ async function handleSignIn() {
 
 .google {
   @apply inline-flex items-center justify-center gap-2.5 w-full min-h-12 px-5
-         font-sans text-[0.9375rem] font-semibold text-paper bg-ink
-         border-2 border-ink rounded-sm cursor-pointer
+         font-sans text-[0.9375rem] font-semibold text-void bg-fg
+         border-2 border-fg rounded-sm cursor-pointer
          transition-[transform,box-shadow,background] duration-[100ms];
-  box-shadow: var(--shadow-stamp-sm);
+  box-shadow: var(--panel-shadow);
 }
 .google:hover:not(:disabled) {
-  @apply bg-accent-deep border-accent-deep;
+  @apply -translate-y-px;
+  box-shadow: 0 6px 24px var(--color-accent-dim);
+  filter: brightness(1.08);
 }
 .google:active:not(:disabled) {
-  @apply translate-x-[2px] translate-y-[2px];
-  box-shadow: none;
+  @apply translate-y-0;
+  filter: brightness(0.94);
 }
 .google:disabled {
   @apply opacity-50 cursor-not-allowed;

@@ -1,18 +1,20 @@
 import type { DocumentData, Firestore } from 'firebase/firestore'
 import type { Appearance } from '@/entities'
-import { APPEARANCE_ID, DEFAULT_ACCENT, isInkName } from '@/entities'
+import { APPEARANCE_ID, DEFAULT_ACCENT, DEFAULT_THEME, isInkName, isThemeName } from '@/entities'
 import type { AppearanceRepository } from '@/usecases/ports'
 import { FirestoreRepository } from './firestore-repository'
 
 function serialize(appearance: Appearance): DocumentData {
-  return { id: appearance.id, accent: appearance.accent }
+  return { id: appearance.id, accent: appearance.accent, theme: appearance.theme }
 }
 
 function deserialize(data: DocumentData): Appearance {
   return {
     id: (data.id as string) ?? APPEARANCE_ID,
-    // An ink removed from the palette must not leave the app unstyled.
+    // A value removed from the palette or theme set must not leave the app
+    // unstyled -- and documents written before themes existed have no `theme`.
     accent: isInkName(data.accent) ? data.accent : DEFAULT_ACCENT,
+    theme: isThemeName(data.theme) ? data.theme : DEFAULT_THEME,
   }
 }
 
