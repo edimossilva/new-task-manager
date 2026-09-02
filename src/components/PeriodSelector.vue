@@ -46,13 +46,13 @@ const yearOptions = computed(() => {
   <div class="flex flex-wrap items-end gap-4 mb-2">
     <div>
       <label :for="dayId">Dia</label>
-      <select :id="dayId" v-model.number="day" class="!w-auto !py-1 !px-2 text-[0.8125rem]">
+      <select :id="dayId" v-model.number="day" class="select-compact">
         <option v-for="option in dayOptions" :key="option" :value="option">{{ option }}</option>
       </select>
     </div>
     <div>
       <label :for="monthId">Mes</label>
-      <select :id="monthId" v-model.number="month" class="!w-auto !py-1 !px-2 text-[0.8125rem]">
+      <select :id="monthId" v-model.number="month" class="select-compact">
         <option v-for="(name, index) in MONTH_NAMES" :key="name" :value="index + 1">
           {{ name }}
         </option>
@@ -60,7 +60,7 @@ const yearOptions = computed(() => {
     </div>
     <div>
       <label :for="yearId">Ano</label>
-      <select :id="yearId" v-model.number="year" class="!w-auto !py-1 !px-2 text-[0.8125rem]">
+      <select :id="yearId" v-model.number="year" class="select-compact">
         <option v-for="option in yearOptions" :key="option" :value="option">{{ option }}</option>
       </select>
     </div>

@@ -250,6 +250,17 @@
     @apply flex items-center gap-1;
   }
 
+  /*
+   * Compact inline select, for filter rows.
+   *
+   * The right padding is load-bearing: the base `select` rule paints a 12px
+   * chevron whose right edge sits 0.75rem in, so text must stop clear of
+   * 1.5rem. Shorthand `px-2` here would put the last character under the arrow.
+   */
+  .select-compact {
+    @apply w-auto py-1 pl-2 pr-8 text-[0.8125rem];
+  }
+
   .form-group {
     @apply mb-5;
   }

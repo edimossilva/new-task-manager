@@ -95,11 +95,7 @@ function lastCompletion(task: Task): string {
   <div v-if="store.tasks.length" class="flex flex-wrap items-end gap-4 mb-2">
     <div>
       <label for="frequency-filter">Frequencia</label>
-      <select
-        id="frequency-filter"
-        v-model="frequencyFilter"
-        class="!w-auto !py-1 !px-2 text-[0.8125rem]"
-      >
+      <select id="frequency-filter" v-model="frequencyFilter" class="select-compact">
         <option value="all">Todas</option>
         <option v-for="frequency in FREQUENCIES" :key="frequency" :value="frequency">
           {{ FREQUENCY_LABELS[frequency] }}
@@ -108,11 +104,7 @@ function lastCompletion(task: Task): string {
     </div>
     <div>
       <label for="status-filter">Situacao</label>
-      <select
-        id="status-filter"
-        v-model="statusFilter"
-        class="!w-auto !py-1 !px-2 text-[0.8125rem]"
-      >
+      <select id="status-filter" v-model="statusFilter" class="select-compact">
         <option value="all">Todas</option>
         <option value="pending">Pendentes</option>
         <option value="completed">Concluidas</option>
