@@ -14,6 +14,8 @@ export interface Task {
   title: string
   description?: string
   frequency: TaskFrequency
+  /** Optional reference to a Category. Existing tasks predate categories. */
+  categoryId?: string
   /** Only meaningful for `weekly`. undefined = any day of the week. */
   weekday?: Weekday
   /** Period keys already completed, ascending. e.g. ['2026-08-31', '2026-09-01'] */
@@ -26,6 +28,7 @@ export interface CreateTaskInput {
   title: string
   description?: string
   frequency: TaskFrequency
+  categoryId?: string
   weekday?: Weekday
 }
 
@@ -36,6 +39,7 @@ export function createTask(input: CreateTaskInput): Task {
     title: input.title,
     description: input.description,
     frequency: input.frequency,
+    categoryId: input.categoryId,
     weekday: input.weekday,
     completions: [],
     createdAt: now,

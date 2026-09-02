@@ -1,15 +1,19 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import type { Task, TaskFrequency, Weekday } from '@/entities'
 import { FREQUENCIES, FREQUENCY_LABELS, WEEKDAYS, WEEKDAY_LABELS } from '@/entities'
 import { useNotificationStore } from '@/stores/notification-store'
 import { useTaskStore } from '@/stores/task-store'
+import { useCategoryStore } from '@/stores/category-store'
 import { useEntityForm } from '@/composables/use-entity-form'
 
 const store = useTaskStore()
+const categoryStore = useCategoryStore()
 const notifications = useNotificationStore()
 const router = useRouter()
+
+onMounted(() => categoryStore.loadAll())
 
 const { isEditMode, existing } = useEntityForm<Task>((id) => store.getById(id))
 
@@ -23,6 +27,8 @@ const frequency = ref<TaskFrequency>('daily')
 // '' is the "Qualquer dia" option. <option> values are strings, so the entity's
 // Weekday is produced at exactly one place, in handleSubmit.
 const weekday = ref<Weekday | ''>('')
+// '' is "Sem categoria"; converted to undefined at submit, like weekday.
+const categoryId = ref<string>('')
 
 watch(existing, (task) => {
   if (!task) return
@@ -30,6 +36,7 @@ watch(existing, (task) => {
   description.value = task.description ?? ''
   frequency.value = task.frequency
   weekday.value = task.weekday ?? ''
+  categoryId.value = task.categoryId ?? ''
 })
 
 function handleSubmit() {
@@ -43,8 +50,9 @@ function handleSubmit() {
     description: description.value.trim() || undefined,
     frequency: frequency.value,
     // Always present, never omitted: the spread below would otherwise preserve
-    // the previous weekday instead of clearing it.
+    // the previous value instead of clearing it.
     weekday: chosenWeekday,
+    categoryId: categoryId.value || undefined,
   }
 
   const saved = existing.value ? store.update({ ...existing.value, ...input }) : store.create(input)
@@ -77,6 +85,20 @@ function handleSubmit() {
     <div class="form-group">
       <label for="description">Descricao</label>
       <textarea id="description" v-model="description" rows="3"></textarea>
+    </div>
+
+    <div class="form-group">
+      <label for="category">Categoria</label>
+      <select id="category" v-model="categoryId">
+        <option value="">Sem categoria</option>
+        <option v-for="option in categoryStore.categories" :key="option.id" :value="option.id">
+          {{ option.name }}
+        </option>
+      </select>
+      <p v-if="categoryStore.categories.length === 0" class="hint">
+        <RouterLink to="/categories/new">Crie uma categoria</RouterLink>
+        para agrupar suas tarefas.
+      </p>
     </div>
 
     <div class="form-group">

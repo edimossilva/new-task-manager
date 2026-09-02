@@ -24,12 +24,14 @@ env vars (`.env`, not committed). `.firebaserc` and the hosting cache are gitign
 ## What This App Is
 
 A personal recurring-task tracker (UI text is in **Brazilian Portuguese**, written without
-diacritics). One entity: tasks, each with a title, an optional description, and a frequency of
-daily / weekly / monthly / yearly. A task is checked off for the *current period* and re-arms itself
+diacritics). Two entities: **tasks** -- a title, optional description, a frequency of
+daily / weekly / monthly / yearly, an optional weekday and an optional category -- and
+**categories**, which group them. A task is checked off for the *current period* and re-arms itself
 when the next one starts.
 
-Data is stored per-user in Firestore under `users/{uid}/tasks/{taskId}`, with Google sign-in via
-Firebase Auth.
+Data is stored per-user in Firestore under `users/{uid}/tasks/{taskId}` and
+`users/{uid}/categories/{categoryId}`, with Google sign-in via Firebase Auth. The security rules
+match any collection under `users/{uid}`, so adding an entity needs no rules change.
 
 ## Architecture
 
@@ -87,6 +89,18 @@ layers.
   document limit. Changing a task's
   frequency leaves the old keys in place: they can never match the new format, so the task correctly
   shows as pending, and keeping them preserves the history for free.
+- **Categories** (`src/entities/category.ts`) are a full entity with their own collection, CRUD
+  views and routes, mirroring `controle-mensal`'s `payment-categories`. A task's `categoryId` is
+  **optional** -- tasks predate categories and must keep working without one.
+  - `CategoryUseCases.delete` is **blocked while any task references the category**, the same guard
+    the reference app puts on owners. `countTasks` drives the list column and that guard.
+  - Colour is stored as an ink **name** (`CategoryInk`, eight values), not a hex. The reference
+    stores a raw hex, which pins the data to one palette; a name resolves through the
+    `--color-cat-*` custom properties, so the theme can be retuned without touching a document.
+    `deserialize` falls back to `DEFAULT_CATEGORY_INK` for an unknown value rather than rendering an
+    unstyled chip.
+  - `CategoryBadge` is deliberately quieter than `FrequencyBadge` -- a dot plus text, no filled
+    ground. Two saturated chips per row was too noisy on a phone.
 - **Weekday-pinned weekly tasks**: a `weekly` task may carry an optional `weekday`
   (`Weekday = 1..7`, **ISO-8601 Monday = 1**). Completion is still the ISO **week** key, so the
   weekday says only *when in the week the task is due* -- adding or changing one needs no migration

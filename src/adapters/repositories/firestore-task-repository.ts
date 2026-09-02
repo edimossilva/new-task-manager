@@ -9,6 +9,7 @@ function serialize(task: Task): DocumentData {
     title: task.title,
     description: task.description ?? null,
     frequency: task.frequency,
+    categoryId: task.categoryId ?? null,
     weekday: task.weekday ?? null,
     completions: task.completions,
     createdAt: Timestamp.fromDate(task.createdAt),
@@ -33,6 +34,7 @@ function deserialize(data: DocumentData): Task {
     title: data.title as string,
     description: (data.description as string | null) ?? undefined,
     frequency: data.frequency as TaskFrequency,
+    categoryId: (data.categoryId as string | null) ?? undefined,
     weekday: toWeekday(data.weekday),
     completions: (data.completions as string[] | undefined) ?? [],
     createdAt: (data.createdAt as Timestamp).toDate(),
@@ -47,5 +49,9 @@ export class FirestoreTaskRepository extends FirestoreRepository<Task> implement
 
   getByFrequency(frequency: TaskFrequency): Task[] {
     return this.getAll().filter((task) => task.frequency === frequency)
+  }
+
+  getByCategoryId(categoryId: string): Task[] {
+    return this.getAll().filter((task) => task.categoryId === categoryId)
   }
 }

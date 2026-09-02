@@ -4,15 +4,20 @@ import type { Task } from '@/entities'
 import { FREQUENCIES, formatDate } from '@/entities'
 import { useAuthStore } from '@/stores/auth-store'
 import { useTaskStore } from '@/stores/task-store'
+import { useCategoryStore } from '@/stores/category-store'
 import { usePeriodSelection } from '@/composables/use-period-selection'
 import DashTaskGroups, { type TaskGroup } from '@/components/DashTaskGroups.vue'
 import PeriodSelector from '@/components/PeriodSelector.vue'
 
 const authStore = useAuthStore()
 const store = useTaskStore()
+const categoryStore = useCategoryStore()
 const { referenceDate, isToday } = usePeriodSelection()
 
-onMounted(() => store.loadAll())
+onMounted(() => {
+  store.loadAll()
+  categoryStore.loadAll()
+})
 
 function isCompleted(task: Task): boolean {
   return store.isCompletedFor(task, referenceDate.value)

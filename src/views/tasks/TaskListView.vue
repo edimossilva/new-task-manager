@@ -10,9 +10,11 @@ import {
   matchesFrequency,
 } from '@/entities'
 import { useTaskStore } from '@/stores/task-store'
+import { useCategoryStore } from '@/stores/category-store'
 import { usePeriodSelection } from '@/composables/use-period-selection'
 import { useSortable } from '@/composables/use-sortable'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import CategoryBadge from '@/components/CategoryBadge.vue'
 import FrequencyBadge from '@/components/FrequencyBadge.vue'
 import WeekdayBadge from '@/components/WeekdayBadge.vue'
 import PeriodSelector from '@/components/PeriodSelector.vue'
@@ -27,9 +29,11 @@ const STATUS_TABS: { value: StatusFilter; label: string }[] = [
 ]
 
 const store = useTaskStore()
+const categoryStore = useCategoryStore()
 const { referenceDate, today } = usePeriodSelection()
 
 const frequencyFilter = ref<TaskFrequency | 'all'>('all')
+const categoryFilter = ref<string>('all')
 const statusFilter = ref<StatusFilter>('all')
 
 const confirmDialog = ref<InstanceType<typeof ConfirmDialog>>()
@@ -61,9 +65,17 @@ const dueTasks = computed(() =>
   store.tasks.filter((task) => {
     if (!store.isDueOn(task, referenceDate.value)) return false
     if (frequencyFilter.value !== 'all' && task.frequency !== frequencyFilter.value) return false
+    if (categoryFilter.value === 'none' && task.categoryId) return false
+    if (categoryFilter.value !== 'all' && categoryFilter.value !== 'none') {
+      if (task.categoryId !== categoryFilter.value) return false
+    }
     return true
   }),
 )
+
+function categoryOf(task: Task) {
+  return task.categoryId ? categoryStore.byId.get(task.categoryId) : undefined
+}
 
 const statusCounts = computed(() => ({
   all: dueTasks.value.length,
@@ -84,12 +96,17 @@ const { sortedItems, sortBy, sortClass } = useSortable(filteredTasks, {
   title: (task) => task.title.toLowerCase(),
   // Sort on the ordinal, not the label, so Diaria comes before Semanal.
   frequency: (task) => FREQUENCY_ORDER[task.frequency],
+  // Uncategorised sorts last ascending rather than first.
+  category: (task) => categoryOf(task)?.name.toLowerCase() ?? '\uffff',
   // Ascending puts what needs attention first: Atrasada, Pendente, Concluida.
   status: (task) => (isCompleted(task) ? 2 : isLate(task) ? 0 : 1),
   lastCompletion: (task) => lastCompletionKey(task) ?? '',
 })
 
-onMounted(() => store.loadAll())
+onMounted(() => {
+  store.loadAll()
+  categoryStore.loadAll()
+})
 
 function confirmDelete(id: string) {
   pendingDeleteId.value = id
@@ -138,6 +155,16 @@ function lastCompletion(task: Task): string {
         </option>
       </select>
     </div>
+    <div v-if="categoryStore.categories.length">
+      <label for="category-filter">Categoria</label>
+      <select id="category-filter" v-model="categoryFilter" class="select-compact">
+        <option value="all">Todas</option>
+        <option v-for="option in categoryStore.categories" :key="option.id" :value="option.id">
+          {{ option.name }}
+        </option>
+        <option value="none">Sem categoria</option>
+      </select>
+    </div>
   </div>
 
   <div v-if="store.tasks.length" class="tabs" role="tablist">
@@ -168,6 +195,7 @@ function lastCompletion(task: Task): string {
         @toggle="store.toggleCompletion(task.id, referenceDate)"
       />
       <div class="min-w-0 flex-1">
+        <CategoryBadge v-if="categoryOf(task)" :category="categoryOf(task)!" class="mb-0.5" />
         <p class="card-title" :class="{ struck: isCompleted(task) }">{{ task.title }}</p>
         <p v-if="task.description" class="card-desc">{{ task.description }}</p>
         <div class="flex flex-wrap items-center gap-1.5 mt-1.5">
@@ -192,6 +220,7 @@ function lastCompletion(task: Task): string {
         <tr>
           <th class="w-10"><span class="sr-only">Concluir</span></th>
           <th :class="sortClass('title')" @click="sortBy('title')">Titulo</th>
+          <th :class="sortClass('category')" @click="sortBy('category')">Categoria</th>
           <th :class="sortClass('frequency')" @click="sortBy('frequency')">Frequencia</th>
           <th :class="sortClass('status')" @click="sortBy('status')">Situacao</th>
           <th :class="sortClass('lastCompletion')" @click="sortBy('lastCompletion')">
@@ -215,6 +244,10 @@ function lastCompletion(task: Task): string {
             <span v-if="task.description" class="block text-xs text-ink-faint">
               {{ task.description }}
             </span>
+          </td>
+          <td>
+            <CategoryBadge v-if="categoryOf(task)" :category="categoryOf(task)!" />
+            <span v-else class="text-ink-faint">-</span>
           </td>
           <td>
             <div class="flex items-center gap-1.5">

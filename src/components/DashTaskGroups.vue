@@ -2,7 +2,9 @@
 import type { Task, TaskFrequency } from '@/entities'
 import { FREQUENCY_LABELS, formatDate } from '@/entities'
 import { useTaskStore } from '@/stores/task-store'
+import { useCategoryStore } from '@/stores/category-store'
 import { usePeriodSelection } from '@/composables/use-period-selection'
+import CategoryBadge from '@/components/CategoryBadge.vue'
 import FrequencyBadge from '@/components/FrequencyBadge.vue'
 import WeekdayBadge from '@/components/WeekdayBadge.vue'
 import TaskStamp from '@/components/TaskStamp.vue'
@@ -15,7 +17,12 @@ export interface TaskGroup {
 const props = defineProps<{ groups: TaskGroup[]; completed: boolean }>()
 
 const store = useTaskStore()
+const categoryStore = useCategoryStore()
 const { referenceDate } = usePeriodSelection()
+
+function categoryOf(task: Task) {
+  return task.categoryId ? categoryStore.byId.get(task.categoryId) : undefined
+}
 
 function isLate(task: Task): boolean {
   // A completed task is never late, so the tag only belongs on the pending list.
@@ -43,7 +50,10 @@ function isLate(task: Task): boolean {
           :period-label="formatDate(referenceDate)"
           @toggle="store.toggleCompletion(task.id, referenceDate)"
         />
-        <span class="row-title" :class="{ struck: completed }">{{ task.title }}</span>
+        <span class="row-body">
+          <span class="row-title" :class="{ struck: completed }">{{ task.title }}</span>
+          <CategoryBadge v-if="categoryOf(task)" :category="categoryOf(task)!" class="mt-0.5" />
+        </span>
         <WeekdayBadge v-if="task.weekday" :weekday="task.weekday" />
         <span v-if="isLate(task)" class="late">Atrasada</span>
       </li>
@@ -74,8 +84,12 @@ function isLate(task: Task): boolean {
   @apply border-b-0 pb-0;
 }
 
+.row-body {
+  @apply flex flex-col flex-1 min-w-0 items-start;
+}
+
 .row-title {
-  @apply flex-1 min-w-0 text-[0.9375rem] leading-snug text-ink break-words;
+  @apply text-[0.9375rem] leading-snug text-ink break-words;
 }
 
 .row-title.struck {

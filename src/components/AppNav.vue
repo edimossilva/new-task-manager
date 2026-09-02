@@ -26,6 +26,7 @@ async function handleSignOut() {
       <nav class="hidden sm:flex items-center gap-1 ml-4">
         <RouterLink to="/" class="nav-link nav-link-exact">Resumo</RouterLink>
         <RouterLink to="/tasks" class="nav-link">Tarefas</RouterLink>
+        <RouterLink to="/categories" class="nav-link">Categorias</RouterLink>
       </nav>
 
       <div v-if="authStore.user" class="flex items-center gap-2 ml-auto shrink-0">
@@ -54,6 +55,14 @@ async function handleSignOut() {
         <path d="M4 6h3v3H4zM9 6.5h11v2H9zM4 11h3v3H4zM9 11.5h11v2H9zM4 16h3v3H4zM9 16.5h11v2H9z" />
       </svg>
       Tarefas
+    </RouterLink>
+    <RouterLink to="/categories" class="dock-link">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path
+          d="M7 4a3 3 0 1 1 0 6 3 3 0 0 1 0-6zm10 0a3 3 0 1 1 0 6 3 3 0 0 1 0-6zM7 14a3 3 0 1 1 0 6 3 3 0 0 1 0-6zm10 0a3 3 0 1 1 0 6 3 3 0 0 1 0-6z"
+        />
+      </svg>
+      Categorias
     </RouterLink>
   </nav>
 </template>

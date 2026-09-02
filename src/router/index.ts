@@ -29,6 +29,21 @@ const router = createRouter({
       name: 'task-edit',
       component: () => import('@/views/tasks/TaskFormView.vue'),
     },
+    {
+      path: '/categories',
+      name: 'category-list',
+      component: () => import('@/views/categories/CategoryListView.vue'),
+    },
+    {
+      path: '/categories/new',
+      name: 'category-create',
+      component: () => import('@/views/categories/CategoryFormView.vue'),
+    },
+    {
+      path: '/categories/:id/edit',
+      name: 'category-edit',
+      component: () => import('@/views/categories/CategoryFormView.vue'),
+    },
   ],
 })
 

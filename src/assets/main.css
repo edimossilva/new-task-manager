@@ -40,6 +40,16 @@
   --color-freq-monthly: #a8781a;
   --color-freq-yearly: #7a4a8c;
 
+  /* Category ink swatches. Data stores the name; these resolve it. */
+  --color-cat-flare: #ff4d17;
+  --color-cat-ultra: #2e5aa8;
+  --color-cat-moss: #4a6b3d;
+  --color-cat-ochre: #a8781a;
+  --color-cat-plum: #7a4a8c;
+  --color-cat-clay: #a8553a;
+  --color-cat-teal: #1e6b68;
+  --color-cat-ink: #1b1815;
+
   --font-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
   --font-sans: 'Archivo', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'DM Mono', ui-monospace, 'SFMono-Regular', monospace;
