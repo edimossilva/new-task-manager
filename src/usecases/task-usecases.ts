@@ -9,11 +9,11 @@ export interface UseCaseResult {
 }
 
 /**
- * Retention cap for `completions`, roughly 13 months of daily check-offs.
- * Without it a long-lived daily task would grow its document without bound,
- * against Firestore's 1 MiB per-document limit.
+ * Retention cap for `completions`: ten years of daily check-offs. At ~11 bytes a
+ * key that is ~40 KB, comfortably inside Firestore's 1 MiB per-document limit,
+ * and it keeps retention from being something the UI has to be tuned around.
  */
-const MAX_COMPLETIONS = 400
+const MAX_COMPLETIONS = 3650
 
 export class TaskUseCases {
   constructor(private taskRepo: TaskRepository) {}
@@ -68,10 +68,22 @@ export class TaskUseCases {
     const key = periodKey(task.frequency, referenceDate)
     const completions = task.completions.includes(key)
       ? task.completions.filter((completion) => completion !== key)
-      : [...task.completions, key].sort().slice(-MAX_COMPLETIONS)
+      : this.withCompletion(task.completions, key)
 
     this.taskRepo.update({ ...task, completions, updatedAt: new Date() })
     return { success: true }
+  }
+
+  /**
+   * Adds `key` and enforces the retention cap by dropping the oldest OTHER keys.
+   *
+   * Pruning the plain tail instead would drop the array minimum -- which is the
+   * key just written whenever the user checks off a period older than everything
+   * stored. That silently swallowed the write and re-rendered the box unchecked.
+   */
+  private withCompletion(completions: string[], key: string): string[] {
+    const others = [...completions].sort().slice(-(MAX_COMPLETIONS - 1))
+    return [...others, key].sort()
   }
 
   /** Tasks still open for the period containing `referenceDate`. */
