@@ -83,9 +83,32 @@ layers.
   no scheduler correct after being closed for months. Period keys are computed from **local** time;
   `toISOString()` would roll the day over hours early west of UTC. Weekly keys use ISO-8601 week
   numbering, whose week-year can differ from the calendar year (2025-12-29 is `2026-W01`).
-  `MAX_COMPLETIONS` (400) caps the history against Firestore's 1 MiB document limit. Changing a task's
+  `MAX_COMPLETIONS` (3650, ten years of dailies) caps the history against Firestore's 1 MiB
+  document limit. Changing a task's
   frequency leaves the old keys in place: they can never match the new format, so the task correctly
   shows as pending, and keeping them preserves the history for free.
+- **Weekday-pinned weekly tasks**: a `weekly` task may carry an optional `weekday`
+  (`Weekday = 1..7`, **ISO-8601 Monday = 1**). Completion is still the ISO **week** key, so the
+  weekday says only *when in the week the task is due* -- adding or changing one needs no migration
+  and an already-ticked week stays ticked. Never encode the weekday into the key.
+  - Monday-first is load-bearing: the feature is a `>=` comparison, and `getDay()`'s Sunday-first
+    0..6 makes Sunday the smallest value while being the last day, which would hide every
+    constrained task on Sundays. `isoWeekday()` in `period.ts` is the only `getDay()` call in the
+    app, and `isoWeek` is written in terms of it so the two conventions cannot drift.
+  - Three states per week: hidden before its day, `Pendente` on it, `Atrasada` (still tickable)
+    after it. A Sunday task therefore has no catch-up window; a Monday task is late six days in
+    seven.
+  - `isDueOn` = `existsIn && appearsOn` is the **single** predicate the views filter by; `appearsOn`
+    (the weekday gate alone) is private so the two cannot diverge. `isLateOn` carries two
+    non-obvious guards: a task created *after* its due day in the same week is not late (`existsIn`
+    is week-granular, so a Friday-created Terca task would otherwise be born overdue), and a
+    reference date in the future is never late (browsing forward inside the current week).
+  - The invariant "weekday set implies weekly" is enforced in `create`/`update`, not the form --
+    `TaskFormView` spreads `{ ...existing, ...input }`, where an omitted key preserves the old value
+    rather than clearing it. `deserialize` also coerces out-of-range values to `undefined`, since a
+    `weekday: 8` would be permanently invisible and so undeletable.
+  - `Qualquer dia` is `undefined`, never `1`: Monday and unconstrained match identically for
+    visibility but differ for overdue.
 - **Period selection** (`src/stores/period-store.ts`): the store owns both the live clock (`now`,
   ticked every 60s and on `visibilitychange`) and `selection` — `{ year, month, day } | null`, where
   **null means follow the clock**. `usePeriodSelection()` derives `referenceDate`, `today` and
