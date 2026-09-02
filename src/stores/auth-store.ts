@@ -6,6 +6,7 @@ import {
   initializeRepositories,
   clearRepositories,
 } from '@/adapters/repositories/repository-provider'
+import { useAppearanceStore } from './appearance-store'
 
 interface AuthUser {
   uid: string
@@ -32,6 +33,9 @@ export const useAuthStore = defineStore('auth', () => {
     }
 
     await initializeRepositories(getFirestoreInstance(), firebaseUser.uid)
+
+    // Before the app mounts, so the accent is right on the first paint.
+    useAppearanceStore().load()
   }
 
   function listenToAuthState(): Promise<void> {
@@ -42,6 +46,7 @@ export const useAuthStore = defineStore('auth', () => {
         } else {
           user.value = null
           clearRepositories()
+          useAppearanceStore().reset()
         }
         loading.value = false
         resolve()
@@ -58,6 +63,8 @@ export const useAuthStore = defineStore('auth', () => {
     await signOutUser()
     user.value = null
     clearRepositories()
+    // The store outlives the session; the next user starts from the default.
+    useAppearanceStore().reset()
   }
 
   return { user, loading, listenToAuthState, signIn, signOut }

@@ -3,7 +3,7 @@
 /*
  * "Almanaque" -- a risograph-printed almanac.
  *
- * Warm paper ground, one deep ink, one fluorescent flare. Shadows are hard and
+ * Warm paper ground, one deep ink, one bright accent. Shadows are hard and
  * offset rather than soft and blurred: that is print misregistration, not glass,
  * and it is the signature of the whole surface. Radii stay tight for the same
  * reason -- paper creases, it does not bevel.
@@ -21,10 +21,19 @@
   --color-rule: rgba(27, 24, 21, 0.14);
   --color-rule-strong: rgba(27, 24, 21, 0.32);
 
-  /* Fluorescent orange: today, due now, overdue, progress. Used sparingly. */
-  --color-flare: #ff4d17;
-  --color-flare-deep: #c2350a;
-  --color-flare-dim: rgba(255, 77, 23, 0.12);
+  /*
+   * The accent: today, due now, overdue, progress. Used sparingly.
+   *
+   * These three are OVERRIDDEN at runtime on :root from the user's chosen ink
+   * (see entities/palette.ts and stores/appearance-store.ts). The values here
+   * are the default and the pre-hydration fallback.
+   *
+   * `deep` exists because paper-coloured text has to sit on the accent in a few
+   * places, and several inks are far too light for that at `base` strength.
+   */
+  --color-accent: #ff4d17;
+  --color-accent-deep: #b8330a;
+  --color-accent-dim: rgba(255, 77, 23, 0.12);
 
   /* Completed */
   --color-moss: #4a6b3d;
@@ -39,16 +48,6 @@
   --color-freq-weekly: #2e5aa8;
   --color-freq-monthly: #a8781a;
   --color-freq-yearly: #7a4a8c;
-
-  /* Category ink swatches. Data stores the name; these resolve it. */
-  --color-cat-flare: #ff4d17;
-  --color-cat-ultra: #2e5aa8;
-  --color-cat-moss: #4a6b3d;
-  --color-cat-ochre: #a8781a;
-  --color-cat-plum: #7a4a8c;
-  --color-cat-clay: #a8553a;
-  --color-cat-teal: #1e6b68;
-  --color-cat-ink: #1b1815;
 
   --font-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
   --font-sans: 'Archivo', ui-sans-serif, system-ui, sans-serif;
@@ -112,11 +111,11 @@
   }
 
   a {
-    @apply text-flare-deep no-underline transition-colors duration-[120ms];
+    @apply text-accent-deep no-underline transition-colors duration-[120ms];
   }
 
   a:hover {
-    @apply text-flare;
+    @apply text-accent;
   }
 
   /* Ruled like a ledger: hairlines, no fills, no rounded cells. */
@@ -145,7 +144,7 @@
   }
 
   tbody tr:hover {
-    @apply bg-flare-dim;
+    @apply bg-accent-dim;
   }
 
   tbody tr:last-child td {
@@ -222,7 +221,7 @@
   }
 
   ::selection {
-    background: var(--color-flare);
+    background: var(--color-accent);
     color: var(--color-paper);
   }
 }
@@ -242,7 +241,7 @@
   }
 
   .btn:hover {
-    @apply bg-flare-deep border-flare-deep;
+    @apply bg-accent-deep border-accent-deep;
   }
 
   .btn:active {
@@ -279,7 +278,7 @@
   }
 
   .btn-link:hover {
-    @apply text-flare-deep;
+    @apply text-accent-deep;
   }
 
   .btn-link.danger:hover {
@@ -302,12 +301,12 @@
 
   th.sort-asc::after {
     content: ' \2191';
-    @apply opacity-100 text-flare-deep;
+    @apply opacity-100 text-accent-deep;
   }
 
   th.sort-desc::after {
     content: ' \2193';
-    @apply opacity-100 text-flare-deep;
+    @apply opacity-100 text-accent-deep;
   }
 
   th.sort-asc,
@@ -368,7 +367,7 @@
   }
 
   .tab[aria-selected='true'] .tab-count {
-    @apply text-flare-deep;
+    @apply text-accent-deep;
   }
 
   /* Numerals: dates, counts, keys. Tabular so columns of them line up. */

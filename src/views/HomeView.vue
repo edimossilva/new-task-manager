@@ -101,7 +101,7 @@ const firstName = computed(() => authStore.user?.displayName?.split(' ')[0] ?? '
 @reference "../assets/main.css";
 
 .eyebrow {
-  @apply font-mono text-[0.625rem] font-medium uppercase tracking-[0.16em] text-flare-deep mb-1;
+  @apply font-mono text-[0.625rem] font-medium uppercase tracking-[0.16em] text-accent-deep mb-1;
 }
 
 .meter {
@@ -132,7 +132,7 @@ const firstName = computed(() => authStore.user?.displayName?.split(' ')[0] ?? '
 }
 
 .meter-fill {
-  @apply h-full bg-flare transition-[width] duration-500;
+  @apply h-full bg-accent transition-[width] duration-500;
 }
 
 .meter-label {

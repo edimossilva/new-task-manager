@@ -1,22 +1,26 @@
 import type { Firestore } from 'firebase/firestore'
-import type { CategoryRepository, TaskRepository } from '@/usecases/ports'
+import type { AppearanceRepository, CategoryRepository, TaskRepository } from '@/usecases/ports'
 import { FirestoreTaskRepository } from './firestore-task-repository'
 import { FirestoreCategoryRepository } from './firestore-category-repository'
+import { FirestoreAppearanceRepository } from './firestore-appearance-repository'
 
 let taskRepo: FirestoreTaskRepository | null = null
 let categoryRepo: FirestoreCategoryRepository | null = null
+let appearanceRepo: FirestoreAppearanceRepository | null = null
 
 export async function initializeRepositories(db: Firestore, userId: string): Promise<void> {
   taskRepo = new FirestoreTaskRepository(db, userId)
   categoryRepo = new FirestoreCategoryRepository(db, userId)
+  appearanceRepo = new FirestoreAppearanceRepository(db, userId)
 
-  // One round trip's worth of latency rather than two.
-  await Promise.all([taskRepo.initialize(), categoryRepo.initialize()])
+  // One round trip's worth of latency rather than three.
+  await Promise.all([taskRepo.initialize(), categoryRepo.initialize(), appearanceRepo.initialize()])
 }
 
 export function clearRepositories(): void {
   taskRepo = null
   categoryRepo = null
+  appearanceRepo = null
 }
 
 function assertRepo<T>(repo: T | null, name: string): T {
@@ -32,4 +36,8 @@ export function getTaskRepository(): TaskRepository {
 
 export function getCategoryRepository(): CategoryRepository {
   return assertRepo(categoryRepo, 'CategoryRepository')
+}
+
+export function getAppearanceRepository(): AppearanceRepository {
+  return assertRepo(appearanceRepo, 'AppearanceRepository')
 }

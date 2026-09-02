@@ -2,6 +2,7 @@
 import { RouterLink, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth-store'
 import { usePeriodStore } from '@/stores/period-store'
+import AccentPicker from '@/components/AccentPicker.vue'
 
 const authStore = useAuthStore()
 const periodStore = usePeriodStore()
@@ -30,6 +31,7 @@ async function handleSignOut() {
       </nav>
 
       <div v-if="authStore.user" class="flex items-center gap-2 ml-auto shrink-0">
+        <AccentPicker />
         <img
           v-if="authStore.user.photoURL"
           :src="authStore.user.photoURL"
@@ -93,7 +95,7 @@ async function handleSignOut() {
 }
 
 .wordmark-dot {
-  @apply text-flare;
+  @apply text-accent;
 }
 
 .nav-link {
@@ -106,8 +108,8 @@ async function handleSignOut() {
 }
 .nav-link.router-link-active:not(.nav-link-exact),
 .nav-link-exact.router-link-exact-active {
-  @apply text-ink bg-flare-dim;
-  box-shadow: inset 0 -2px 0 var(--color-flare);
+  @apply text-ink bg-accent-dim;
+  box-shadow: inset 0 -2px 0 var(--color-accent);
 }
 
 .signout {
@@ -138,7 +140,7 @@ async function handleSignOut() {
 
 .dock-link.router-link-active:not(.dock-link-exact),
 .dock-link-exact.router-link-exact-active {
-  @apply text-ink bg-flare-dim;
-  box-shadow: inset 0 2px 0 var(--color-flare);
+  @apply text-ink bg-accent-dim;
+  box-shadow: inset 0 2px 0 var(--color-accent);
 }
 </style>

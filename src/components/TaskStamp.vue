@@ -45,7 +45,7 @@ defineEmits<{ toggle: [] }>()
 }
 
 .stamp:hover .stamp-box {
-  @apply bg-flare-dim;
+  @apply bg-accent-dim;
 }
 
 .stamp:active .stamp-box {
@@ -56,7 +56,7 @@ defineEmits<{ toggle: [] }>()
   @apply outline-none;
 }
 .stamp:focus-visible .stamp-box {
-  box-shadow: 0 0 0 3px var(--color-flare-dim);
+  box-shadow: 0 0 0 3px var(--color-accent-dim);
 }
 
 .stamp-mark {

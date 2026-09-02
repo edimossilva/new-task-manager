@@ -1,11 +1,21 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { Category } from '@/entities'
+import { INKS } from '@/entities'
 
-defineProps<{ category: Category }>()
+const props = defineProps<{ category: Category }>()
+
+// Bound inline rather than through per-ink classes: twenty inks would mean
+// twenty near-identical rules in every component that renders one.
+const ink = computed(() => INKS[props.category.ink])
 </script>
 
 <template>
-  <span class="badge" :class="`ink-${category.ink}`" :title="category.description || category.name">
+  <span
+    class="badge"
+    :style="{ '--cat-deep': ink.deep, '--cat-base': ink.base }"
+    :title="category.description || category.name"
+  >
     <span class="dot" aria-hidden="true"></span>
     {{ category.name }}
   </span>
@@ -15,45 +25,22 @@ defineProps<{ category: Category }>()
 @reference "../assets/main.css";
 
 /*
- * Deliberately quieter than FrequencyBadge: a solid ink dot plus plain text.
- * Two fully coloured chips per row was too noisy on a phone, so only one of the
- * pair carries a filled ground.
+ * Deliberately quieter than FrequencyBadge: a solid ink dot plus text, no
+ * filled ground. Two fully coloured chips per row was too noisy on a phone.
+ *
+ * The TEXT uses `deep`, not `base`: at 11px on paper, a light amber or lime at
+ * base strength is unreadable. The dot keeps `base`, where saturation is free.
  */
 .badge {
   @apply inline-flex items-center gap-1.5 max-w-[11rem] font-sans text-[0.6875rem]
          font-semibold uppercase tracking-[0.06em] whitespace-nowrap overflow-hidden
          text-ellipsis;
-  color: var(--cat);
+  color: var(--cat-deep);
 }
 
 .dot {
   @apply w-2 h-2 shrink-0 rounded-full border;
-  background: var(--cat);
-  border-color: var(--cat);
-}
-
-.ink-flare {
-  --cat: var(--color-cat-flare);
-}
-.ink-ultra {
-  --cat: var(--color-cat-ultra);
-}
-.ink-moss {
-  --cat: var(--color-cat-moss);
-}
-.ink-ochre {
-  --cat: var(--color-cat-ochre);
-}
-.ink-plum {
-  --cat: var(--color-cat-plum);
-}
-.ink-clay {
-  --cat: var(--color-cat-clay);
-}
-.ink-teal {
-  --cat: var(--color-cat-teal);
-}
-.ink-ink {
-  --cat: var(--color-cat-ink);
+  background: var(--cat-base);
+  border-color: var(--cat-deep);
 }
 </style>

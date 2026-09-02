@@ -27,7 +27,7 @@ async function handleSignIn() {
   <div class="flex items-center justify-center min-h-[70vh]">
     <div class="card">
       <p class="eyebrow">Almanaque de rotinas</p>
-      <h1 class="title">Tarefas<span class="text-flare">.</span></h1>
+      <h1 class="title">Tarefas<span class="text-accent">.</span></h1>
       <p class="blurb">Diarias, semanais, mensais e anuais. Um toque para marcar.</p>
 
       <!-- Four ink rules standing in for the four frequencies. -->
@@ -71,7 +71,7 @@ async function handleSignIn() {
 }
 
 .eyebrow {
-  @apply font-mono text-[0.625rem] font-medium uppercase tracking-[0.18em] text-flare-deep;
+  @apply font-mono text-[0.625rem] font-medium uppercase tracking-[0.18em] text-accent-deep;
 }
 
 .title {
@@ -99,7 +99,7 @@ async function handleSignIn() {
   @apply w-3/4;
 }
 .rules li:nth-child(3) {
-  @apply w-1/2 bg-flare;
+  @apply w-1/2 bg-accent;
 }
 .rules li:nth-child(4) {
   @apply w-1/4;
@@ -122,7 +122,7 @@ async function handleSignIn() {
   box-shadow: var(--shadow-stamp-sm);
 }
 .google:hover:not(:disabled) {
-  @apply bg-flare-deep border-flare-deep;
+  @apply bg-accent-deep border-accent-deep;
 }
 .google:active:not(:disabled) {
   @apply translate-x-[2px] translate-y-[2px];

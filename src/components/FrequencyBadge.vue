@@ -17,7 +17,9 @@ defineProps<{ frequency: TaskFrequency }>()
          tracking-[0.1em] leading-[1.5] whitespace-nowrap border rounded-[2px];
 }
 .badge.daily {
-  @apply text-freq-daily border-freq-daily bg-flare-dim;
+  color: var(--color-freq-daily);
+  border-color: var(--color-freq-daily);
+  background: color-mix(in srgb, var(--color-freq-daily) 10%, transparent);
 }
 .badge.weekly {
   color: var(--color-freq-weekly);

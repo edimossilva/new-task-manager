@@ -1,3 +1,5 @@
 export * from './task'
+export * from './palette'
 export * from './category'
+export * from './appearance'
 export * from './period'

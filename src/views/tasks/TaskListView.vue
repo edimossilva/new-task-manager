@@ -255,7 +255,7 @@ function lastCompletion(task: Task): string {
               <WeekdayBadge v-if="task.weekday" :weekday="task.weekday" />
             </div>
           </td>
-          <td :class="isLate(task) ? 'text-flare-deep font-semibold' : ''">
+          <td :class="isLate(task) ? 'text-accent-deep font-semibold' : ''">
             {{ situacao(task) }}
           </td>
           <td class="figure text-[0.8125rem]">{{ lastCompletion(task) }}</td>
@@ -313,7 +313,7 @@ function lastCompletion(task: Task): string {
 
 .card-late {
   @apply font-mono text-[0.625rem] font-medium uppercase tracking-[0.1em]
-         text-paper bg-flare px-1.5 py-0.5 rounded-[2px];
+         text-paper bg-accent-deep px-1.5 py-0.5 rounded-[2px];
 }
 
 .card-meta {

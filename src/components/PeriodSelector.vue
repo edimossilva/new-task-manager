@@ -182,7 +182,7 @@ function inRange(date: Date): boolean {
     'WONK' 1;
 }
 .month-btn:hover {
-  @apply text-flare-deep;
+  @apply text-accent-deep;
 }
 
 .month-caret {
@@ -229,10 +229,10 @@ function inRange(date: Date): boolean {
 
 /* Today is marked in flare even when it is not the day being viewed. */
 .chip.is-today .chip-num {
-  @apply text-flare-deep;
+  @apply text-accent-deep;
 }
 .chip.is-today {
-  @apply border-flare;
+  @apply border-accent;
 }
 
 .chip.is-selected {
@@ -246,7 +246,7 @@ function inRange(date: Date): boolean {
   @apply text-paper;
 }
 .chip.is-selected.is-today .chip-num {
-  @apply text-flare;
+  @apply text-accent;
 }
 
 .jump {

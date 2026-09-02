@@ -135,7 +135,7 @@ function handleSubmit() {
 @reference "../../assets/main.css";
 
 .eyebrow {
-  @apply font-mono text-[0.625rem] font-medium uppercase tracking-[0.16em] text-flare-deep mb-1;
+  @apply font-mono text-[0.625rem] font-medium uppercase tracking-[0.16em] text-accent-deep mb-1;
 }
 
 .hint {

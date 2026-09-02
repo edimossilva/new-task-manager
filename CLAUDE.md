@@ -89,16 +89,31 @@ layers.
   document limit. Changing a task's
   frequency leaves the old keys in place: they can never match the new format, so the task correctly
   shows as pending, and keeping them preserves the history for free.
+- **The ink palette** (`src/entities/palette.ts`) is the single source of truth for colour:
+  twenty named inks, each with `base`, `deep` and `dim`. Three values because one hex cannot do
+  three jobs -- `base` for fills, **`deep` for the ink as TEXT on paper** (several inks are
+  unreadable at base strength at 11px), `dim` for washes. Every `deep` is verified at >= 4.5:1 on
+  paper, and **anywhere paper-coloured text sits on the accent it must use `deep`, not `base`**
+  (the `Atrasada` tag) -- amber at base is 2.05:1. Only ink **names** are persisted, never hex, so
+  this table can be retuned without migrating a document. It deliberately lives in TS rather than
+  CSS: duplicating twenty triples into `@theme` would guarantee drift.
+- **The accent is user-chosen** (`src/stores/appearance-store.ts`). The store writes the picked
+  ink's three values onto `:root` as `--color-accent{,-deep,-dim}`, which every accent utility in
+  the app resolves -- one assignment retints the whole interface. It persists to
+  `users/{uid}/settings/appearance`, modelled as a one-document collection so it rides the generic
+  collection-shaped repository with no new machinery. `load()` runs inside `setupSession` **after**
+  the repositories initialize and therefore before the app mounts, so there is no flash of the
+  default; `reset()` runs on sign-out so the next user does not inherit it. `ACCENT_CHOICES`
+  excludes `ink`: a black accent is degenerate, and `text-accent` on `bg-ink` would vanish.
 - **Categories** (`src/entities/category.ts`) are a full entity with their own collection, CRUD
   views and routes, mirroring `controle-mensal`'s `payment-categories`. A task's `categoryId` is
   **optional** -- tasks predate categories and must keep working without one.
   - `CategoryUseCases.delete` is **blocked while any task references the category**, the same guard
     the reference app puts on owners. `countTasks` drives the list column and that guard.
-  - Colour is stored as an ink **name** (`CategoryInk`, eight values), not a hex. The reference
-    stores a raw hex, which pins the data to one palette; a name resolves through the
-    `--color-cat-*` custom properties, so the theme can be retuned without touching a document.
-    `deserialize` falls back to `DEFAULT_CATEGORY_INK` for an unknown value rather than rendering an
-    unstyled chip.
+  - Colour is an ink name from the shared palette (all twenty offered). `deserialize` falls back
+    to `DEFAULT_CATEGORY_INK` for an unknown value rather than rendering an unstyled chip.
+  - `InkSwatches.vue` is shared by the category form and the accent picker, and binds colours
+    inline from `INKS` -- twenty per-ink CSS classes in each consumer was the alternative.
   - `CategoryBadge` is deliberately quieter than `FrequencyBadge` -- a dot plus text, no filled
     ground. Two saturated chips per row was too noisy on a phone.
 - **Weekday-pinned weekly tasks**: a `weekly` task may carry an optional `weekday`

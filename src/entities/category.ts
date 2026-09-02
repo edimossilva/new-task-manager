@@ -1,36 +1,18 @@
-/**
- * Category colours are stored as ink NAMES, not hex.
- *
- * The reference app stores a raw hex per category, which pins the data to one
- * palette -- retuning the theme would leave every saved colour behind. A name
- * resolves through CSS custom properties instead, so the palette can move
- * without touching a single document.
- */
-export type CategoryInk = 'flare' | 'ultra' | 'moss' | 'ochre' | 'plum' | 'clay' | 'teal' | 'ink'
+import type { InkName } from './palette'
+import { DEFAULT_ACCENT, INKS, INK_NAMES, isInkName } from './palette'
 
-export const CATEGORY_INKS: CategoryInk[] = [
-  'flare',
-  'ultra',
-  'moss',
-  'ochre',
-  'plum',
-  'clay',
-  'teal',
-  'ink',
-]
+/** Categories draw from the shared ink palette; all twenty are offered. */
+export type CategoryInk = InkName
 
-export const CATEGORY_INK_LABELS: Record<CategoryInk, string> = {
-  flare: 'Laranja',
-  ultra: 'Azul',
-  moss: 'Verde',
-  ochre: 'Ocre',
-  plum: 'Roxo',
-  clay: 'Terracota',
-  teal: 'Petroleo',
-  ink: 'Preto',
-}
+export const CATEGORY_INKS: CategoryInk[] = INK_NAMES
 
-export const DEFAULT_CATEGORY_INK: CategoryInk = 'ultra'
+export const CATEGORY_INK_LABELS: Record<CategoryInk, string> = Object.fromEntries(
+  INK_NAMES.map((name) => [name, INKS[name].label]),
+) as Record<CategoryInk, string>
+
+export const DEFAULT_CATEGORY_INK: CategoryInk = DEFAULT_ACCENT
+
+export const isCategoryInk = isInkName
 
 export interface Category {
   id: string
@@ -57,8 +39,4 @@ export function createCategory(input: CreateCategoryInput): Category {
     createdAt: now,
     updatedAt: now,
   }
-}
-
-export function isCategoryInk(value: unknown): value is CategoryInk {
-  return typeof value === 'string' && (CATEGORY_INKS as string[]).includes(value)
 }

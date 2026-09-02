@@ -99,6 +99,6 @@ function isLate(task: Task): boolean {
 
 .late {
   @apply shrink-0 font-mono text-[0.625rem] font-medium uppercase tracking-[0.1em]
-         text-paper bg-flare px-1.5 py-0.5 rounded-[2px];
+         text-paper bg-accent-deep px-1.5 py-0.5 rounded-[2px];
 }
 </style>
