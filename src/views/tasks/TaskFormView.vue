@@ -62,15 +62,16 @@ function handleSubmit() {
 </script>
 
 <template>
+  <p class="eyebrow">{{ isEditMode ? 'Editar' : 'Nova' }}</p>
   <h1>{{ isEditMode ? 'Editar Tarefa' : 'Nova Tarefa' }}</h1>
 
   <p v-if="notFound" class="error">Tarefa nao encontrada.</p>
   <p v-else-if="store.error" class="error">{{ store.error }}</p>
 
-  <form v-if="!notFound" class="max-w-lg" @submit.prevent="handleSubmit">
+  <form v-if="!notFound" class="sheet max-w-lg p-4 sm:p-5" @submit.prevent="handleSubmit">
     <div class="form-group">
       <label for="title">Titulo</label>
-      <input id="title" v-model="title" type="text" required autofocus />
+      <input id="title" v-model="title" type="text" required autofocus autocomplete="off" />
     </div>
 
     <div class="form-group">
@@ -87,23 +88,47 @@ function handleSubmit() {
       </select>
     </div>
 
-    <div v-if="frequency === 'weekly'" class="form-group">
-      <label for="weekday">Dia da semana</label>
-      <select id="weekday" v-model="weekday">
-        <option value="">Qualquer dia</option>
-        <option v-for="option in WEEKDAYS" :key="option" :value="option">
-          {{ WEEKDAY_LABELS[option] }}
-        </option>
-      </select>
-      <p class="mt-1.5 text-[0.8125rem] text-text-muted">
-        A tarefa aparece a partir deste dia e vale para a semana inteira.
-      </p>
-    </div>
+    <Transition name="reveal">
+      <div v-if="frequency === 'weekly'" class="form-group">
+        <label for="weekday">Dia da semana</label>
+        <select id="weekday" v-model="weekday">
+          <option value="">Qualquer dia</option>
+          <option v-for="option in WEEKDAYS" :key="option" :value="option">
+            {{ WEEKDAY_LABELS[option] }}
+          </option>
+        </select>
+        <p class="hint">A tarefa aparece a partir deste dia e vale para a semana inteira.</p>
+      </div>
+    </Transition>
 
-    <div class="flex gap-2">
-      <button type="submit" class="btn">Salvar</button>
+    <div class="flex flex-col-reverse sm:flex-row gap-2 pt-1">
       <RouterLink to="/tasks" class="btn btn-secondary">Cancelar</RouterLink>
+      <button type="submit" class="btn">Salvar</button>
     </div>
   </form>
   <RouterLink v-else to="/tasks" class="btn btn-secondary">Voltar</RouterLink>
 </template>
+
+<style scoped>
+@reference "../../assets/main.css";
+
+.eyebrow {
+  @apply font-mono text-[0.625rem] font-medium uppercase tracking-[0.16em] text-flare-deep mb-1;
+}
+
+.hint {
+  @apply mt-1.5 text-[0.8125rem] leading-snug text-ink-faint;
+}
+
+.reveal-enter-active,
+.reveal-leave-active {
+  transition:
+    opacity 160ms ease,
+    transform 200ms ease;
+}
+.reveal-enter-from,
+.reveal-leave-to {
+  opacity: 0;
+  transform: translateY(-0.375rem);
+}
+</style>

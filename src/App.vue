@@ -6,7 +6,10 @@ import NotificationToast from '@/components/NotificationToast.vue'
 <template>
   <div class="min-h-screen flex flex-col">
     <AppNav />
-    <main class="max-w-7xl mx-auto px-4 py-8 w-full flex-1">
+    <!-- Bottom padding clears the mobile dock plus the home-bar inset. -->
+    <main
+      class="relative z-10 max-w-4xl mx-auto px-4 pt-6 pb-[calc(5rem+env(safe-area-inset-bottom))] sm:pt-8 sm:pb-12 w-full flex-1"
+    >
       <RouterView />
     </main>
     <NotificationToast />

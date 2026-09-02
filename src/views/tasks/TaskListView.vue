@@ -16,7 +16,7 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FrequencyBadge from '@/components/FrequencyBadge.vue'
 import WeekdayBadge from '@/components/WeekdayBadge.vue'
 import PeriodSelector from '@/components/PeriodSelector.vue'
-import TaskCheckbox from '@/components/TaskCheckbox.vue'
+import TaskStamp from '@/components/TaskStamp.vue'
 
 type StatusFilter = 'all' | 'pending' | 'completed'
 
@@ -119,16 +119,16 @@ function lastCompletion(task: Task): string {
 </script>
 
 <template>
-  <div class="flex items-center justify-between mb-6">
+  <header class="flex items-start justify-between gap-3 mb-5">
     <h1 class="!mb-0">Tarefas</h1>
-    <RouterLink to="/tasks/new" class="btn">Nova Tarefa</RouterLink>
-  </div>
+    <RouterLink to="/tasks/new" class="btn shrink-0">Nova</RouterLink>
+  </header>
 
   <p v-if="store.error" class="error">{{ store.error }}</p>
 
   <PeriodSelector v-if="store.tasks.length" />
 
-  <div v-if="store.tasks.length" class="flex flex-wrap items-end gap-4 mb-2">
+  <div v-if="store.tasks.length" class="flex flex-wrap items-end gap-3 mb-3">
     <div>
       <label for="frequency-filter">Frequencia</label>
       <select id="frequency-filter" v-model="frequencyFilter" class="select-compact">
@@ -140,7 +140,7 @@ function lastCompletion(task: Task): string {
     </div>
   </div>
 
-  <div v-if="store.tasks.length" class="tabs mt-4" role="tablist">
+  <div v-if="store.tasks.length" class="tabs" role="tablist">
     <button
       v-for="tab in STATUS_TABS"
       :key="tab.value"
@@ -155,63 +155,163 @@ function lastCompletion(task: Task): string {
     </button>
   </div>
 
-  <table v-if="sortedItems.length">
-    <thead>
-      <tr>
-        <th class="w-10"><span class="sr-only">Concluir</span></th>
-        <th :class="sortClass('title')" @click="sortBy('title')">Titulo</th>
-        <th :class="sortClass('frequency')" @click="sortBy('frequency')">Frequencia</th>
-        <th :class="sortClass('status')" @click="sortBy('status')">Situacao</th>
-        <th :class="sortClass('lastCompletion')" @click="sortBy('lastCompletion')">
-          Ultima conclusao
-        </th>
-        <th>Acoes</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr v-for="task in sortedItems" :key="task.id">
-        <td>
-          <TaskCheckbox
-            :task="task"
-            :completed="isCompleted(task)"
-            :period-label="formatDate(referenceDate)"
-            @toggle="store.toggleCompletion(task.id, referenceDate)"
-          />
-        </td>
-        <td :class="{ 'line-through text-text-muted': isCompleted(task) }">
-          {{ task.title }}
-          <span v-if="task.description" class="block text-xs text-text-muted">
-            {{ task.description }}
-          </span>
-        </td>
-        <td>
-          <div class="flex items-center gap-1.5">
-            <FrequencyBadge :frequency="task.frequency" />
-            <WeekdayBadge v-if="task.weekday" :weekday="task.weekday" />
-          </div>
-        </td>
-        <td :class="{ 'text-danger font-medium': isLate(task) }">{{ situacao(task) }}</td>
-        <td>{{ lastCompletion(task) }}</td>
-        <td>
-          <div class="actions">
-            <RouterLink :to="`/tasks/${task.id}/edit`" class="btn-link">Editar</RouterLink>
-            <button type="button" class="btn-link danger" @click="confirmDelete(task.id)">
-              Excluir
-            </button>
-          </div>
-        </td>
-      </tr>
-    </tbody>
-  </table>
-  <p v-else-if="store.tasks.length === 0">Nenhuma tarefa cadastrada.</p>
-  <p v-else-if="dueTasks.length === 0">Nenhuma tarefa para este dia.</p>
-  <p v-else-if="statusFilter === 'completed'">Nenhuma tarefa concluida neste dia.</p>
-  <p v-else-if="statusFilter === 'pending'">Nenhuma tarefa pendente neste dia.</p>
-  <p v-else>Nenhuma tarefa corresponde aos filtros.</p>
+  <!--
+    Phones get cards, md+ gets the sortable table. Six columns cannot be read on
+    a 390px screen, and column sorting has no affordance without headers.
+  -->
+  <TransitionGroup v-if="sortedItems.length" tag="ul" name="card" class="relative md:hidden mt-3">
+    <li v-for="task in sortedItems" :key="task.id" class="card">
+      <TaskStamp
+        :task="task"
+        :completed="isCompleted(task)"
+        :period-label="formatDate(referenceDate)"
+        @toggle="store.toggleCompletion(task.id, referenceDate)"
+      />
+      <div class="min-w-0 flex-1">
+        <p class="card-title" :class="{ struck: isCompleted(task) }">{{ task.title }}</p>
+        <p v-if="task.description" class="card-desc">{{ task.description }}</p>
+        <div class="flex flex-wrap items-center gap-1.5 mt-1.5">
+          <FrequencyBadge :frequency="task.frequency" />
+          <WeekdayBadge v-if="task.weekday" :weekday="task.weekday" />
+          <span v-if="isLate(task)" class="card-late">Atrasada</span>
+          <span class="card-meta figure">{{ lastCompletion(task) }}</span>
+        </div>
+      </div>
+      <div class="flex flex-col items-end shrink-0 -my-1">
+        <RouterLink :to="`/tasks/${task.id}/edit`" class="btn-link">Editar</RouterLink>
+        <button type="button" class="btn-link danger" @click="confirmDelete(task.id)">
+          Excluir
+        </button>
+      </div>
+    </li>
+  </TransitionGroup>
 
-  <p v-if="hiddenCount" class="mt-3 text-[0.8125rem] text-text-muted">
+  <div v-if="sortedItems.length" class="hidden md:block overflow-x-auto">
+    <table>
+      <thead>
+        <tr>
+          <th class="w-10"><span class="sr-only">Concluir</span></th>
+          <th :class="sortClass('title')" @click="sortBy('title')">Titulo</th>
+          <th :class="sortClass('frequency')" @click="sortBy('frequency')">Frequencia</th>
+          <th :class="sortClass('status')" @click="sortBy('status')">Situacao</th>
+          <th :class="sortClass('lastCompletion')" @click="sortBy('lastCompletion')">
+            Ultima conclusao
+          </th>
+          <th>Acoes</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="task in sortedItems" :key="task.id">
+          <td>
+            <TaskStamp
+              :task="task"
+              :completed="isCompleted(task)"
+              :period-label="formatDate(referenceDate)"
+              @toggle="store.toggleCompletion(task.id, referenceDate)"
+            />
+          </td>
+          <td :class="{ 'text-ink-faint line-through': isCompleted(task) }">
+            <span class="text-ink">{{ task.title }}</span>
+            <span v-if="task.description" class="block text-xs text-ink-faint">
+              {{ task.description }}
+            </span>
+          </td>
+          <td>
+            <div class="flex items-center gap-1.5">
+              <FrequencyBadge :frequency="task.frequency" />
+              <WeekdayBadge v-if="task.weekday" :weekday="task.weekday" />
+            </div>
+          </td>
+          <td :class="isLate(task) ? 'text-flare-deep font-semibold' : ''">
+            {{ situacao(task) }}
+          </td>
+          <td class="figure text-[0.8125rem]">{{ lastCompletion(task) }}</td>
+          <td>
+            <div class="actions">
+              <RouterLink :to="`/tasks/${task.id}/edit`" class="btn-link">Editar</RouterLink>
+              <button type="button" class="btn-link danger" @click="confirmDelete(task.id)">
+                Excluir
+              </button>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div v-else class="empty">
+    <p v-if="store.tasks.length === 0">
+      Nenhuma tarefa cadastrada.
+      <RouterLink to="/tasks/new">Crie a primeira</RouterLink>
+      para comecar.
+    </p>
+    <p v-else-if="dueTasks.length === 0">Nenhuma tarefa para este dia.</p>
+    <p v-else-if="statusFilter === 'completed'">Nenhuma tarefa concluida neste dia.</p>
+    <p v-else-if="statusFilter === 'pending'">Nenhuma tarefa pendente neste dia.</p>
+    <p v-else>Nenhuma tarefa corresponde aos filtros.</p>
+  </div>
+
+  <p v-if="hiddenCount" class="hidden-note figure">
     {{ hiddenCount }} {{ hiddenCount === 1 ? 'tarefa oculta' : 'tarefas ocultas' }} neste dia.
   </p>
 
   <ConfirmDialog ref="confirmDialog" @confirm="handleDelete" />
 </template>
+
+<style scoped>
+@reference "../../assets/main.css";
+
+.card {
+  @apply flex items-start gap-3 px-3.5 py-3 mb-2 bg-paper-raised
+         border border-rule-strong rounded-sm;
+}
+
+.card-title {
+  @apply text-[0.9375rem] leading-snug font-medium text-ink break-words;
+}
+.card-title.struck {
+  @apply text-ink-faint line-through decoration-[1.5px];
+  text-decoration-color: var(--color-moss);
+}
+
+.card-desc {
+  @apply mt-0.5 text-[0.8125rem] leading-snug text-ink-faint break-words;
+}
+
+.card-late {
+  @apply font-mono text-[0.625rem] font-medium uppercase tracking-[0.1em]
+         text-paper bg-flare px-1.5 py-0.5 rounded-[2px];
+}
+
+.card-meta {
+  @apply text-[0.6875rem] text-ink-faint;
+}
+
+.empty {
+  @apply mt-6 px-4 py-8 text-center bg-paper-raised border border-dashed border-rule-strong
+         rounded-sm;
+}
+
+.hidden-note {
+  @apply mt-3 text-[0.75rem] text-ink-faint;
+}
+
+.card-enter-active,
+.card-leave-active,
+.card-move {
+  transition:
+    opacity 180ms ease,
+    transform 240ms cubic-bezier(0.34, 1.3, 0.64, 1);
+}
+.card-enter-from {
+  opacity: 0;
+  transform: translateY(0.5rem);
+}
+.card-leave-to {
+  opacity: 0;
+  transform: scale(0.97);
+}
+.card-leave-active {
+  @apply absolute;
+}
+</style>

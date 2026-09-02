@@ -46,77 +46,107 @@ const firstName = computed(() => authStore.user?.displayName?.split(' ')[0] ?? '
 </script>
 
 <template>
-  <div class="flex items-center justify-between mb-6">
-    <h1 class="!mb-0">Ola, {{ firstName }}</h1>
-    <RouterLink to="/tasks" class="btn">Ver Tarefas</RouterLink>
-  </div>
+  <header class="flex items-start justify-between gap-3 mb-5">
+    <div class="min-w-0">
+      <p class="eyebrow">{{ isToday ? 'Hoje' : formatDate(referenceDate) }}</p>
+      <h1 class="!mb-0 truncate">Ola, {{ firstName }}</h1>
+    </div>
+    <RouterLink to="/tasks/new" class="btn shrink-0">Nova</RouterLink>
+  </header>
 
   <template v-if="store.tasks.length">
     <PeriodSelector />
 
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
-      <div class="dash-card">
-        <span class="dash-label">Concluidas</span>
-        <span class="dash-value text-success">{{ completed.length }}</span>
-      </div>
-      <div class="dash-card">
-        <span class="dash-label">Pendentes</span>
-        <span class="dash-value text-primary">{{ pending.length }}</span>
-      </div>
-      <div class="dash-card">
-        <span class="dash-label">Total de tarefas</span>
-        <span class="dash-value">{{ visibleTasks.length }}</span>
-      </div>
-    </div>
-
-    <div v-if="visibleTasks.length" class="mt-6">
-      <div class="flex items-center justify-between mb-1.5">
-        <span class="text-[0.8125rem] font-medium text-text-secondary">
-          {{ isToday ? 'Progresso do periodo' : `Progresso em ${formatDate(referenceDate)}` }}
+    <!-- One figure, read at a glance: the ratio, drawn as a ruled meter. -->
+    <section v-if="visibleTasks.length" class="meter" aria-label="Progresso">
+      <div class="meter-head">
+        <span class="meter-figure figure">
+          {{ completed.length }}<span class="meter-slash">/</span>{{ visibleTasks.length }}
         </span>
-        <span class="text-[0.8125rem] font-semibold text-text">{{ progress }}%</span>
+        <span class="meter-pct figure">{{ progress }}%</span>
       </div>
-      <div
-        v-if="visibleTasks.length"
-        class="h-2 w-full bg-surface-active rounded-full overflow-hidden"
-      >
-        <div
-          class="h-full bg-success transition-[width] duration-300"
-          :style="{ width: `${progress}%` }"
-        ></div>
+      <div class="meter-track">
+        <div class="meter-fill" :style="{ width: `${progress}%` }"></div>
       </div>
-    </div>
+      <p class="meter-label">
+        {{ progress === 100 ? 'Tudo concluido' : `${pending.length} restantes` }}
+      </p>
+    </section>
 
-    <h2 class="mt-8 mb-3">Pendentes</h2>
-    <p v-if="visibleTasks.length === 0">Nenhuma tarefa para este dia.</p>
-    <p v-else-if="pendingByFrequency.length === 0">
+    <h2 class="mt-7 mb-1">Pendentes</h2>
+    <p v-if="visibleTasks.length === 0" class="section-empty">Nenhuma tarefa para este dia.</p>
+    <p v-else-if="pendingByFrequency.length === 0" class="section-empty">
       {{ isToday ? 'Tudo em dia por aqui.' : 'Tudo concluido neste dia.' }}
     </p>
     <DashTaskGroups :groups="pendingByFrequency" :completed="false" />
 
     <template v-if="completedByFrequency.length">
-      <h2 class="mt-8 mb-3">Concluidas</h2>
+      <h2 class="mt-7 mb-1">Concluidas</h2>
       <DashTaskGroups :groups="completedByFrequency" :completed="true" />
     </template>
   </template>
 
-  <p v-else>
-    Nenhuma tarefa cadastrada ainda.
-    <RouterLink to="/tasks/new">Crie a primeira</RouterLink>
-    para comecar.
-  </p>
+  <div v-else class="empty">
+    <p class="empty-line">Nada por aqui ainda.</p>
+    <RouterLink to="/tasks/new" class="btn mt-4">Criar a primeira tarefa</RouterLink>
+  </div>
 </template>
 
 <style scoped>
 @reference "../assets/main.css";
 
-.dash-card {
-  @apply flex flex-col gap-1 px-5 py-4 bg-surface border border-border rounded-lg;
+.eyebrow {
+  @apply font-mono text-[0.625rem] font-medium uppercase tracking-[0.16em] text-flare-deep mb-1;
 }
-.dash-label {
-  @apply text-xs font-semibold uppercase tracking-widest text-text-muted;
+
+.meter {
+  @apply px-4 py-3.5 bg-paper-raised border-2 border-ink rounded-sm;
+  box-shadow: var(--shadow-stamp-sm);
 }
-.dash-value {
-  @apply text-2xl font-bold text-text;
+
+.meter-head {
+  @apply flex items-baseline justify-between gap-2;
+}
+
+.meter-figure {
+  @apply text-[1.75rem] leading-none font-medium text-ink;
+}
+
+.meter-slash {
+  @apply text-ink-faint mx-0.5;
+}
+
+.meter-pct {
+  @apply text-[0.8125rem] text-ink-soft;
+}
+
+/* Hatched track so an empty meter still reads as a scale, not a void. */
+.meter-track {
+  @apply relative h-2.5 w-full mt-2.5 border border-ink overflow-hidden;
+  background-image: repeating-linear-gradient(45deg, transparent 0 3px, var(--color-rule) 3px 4px);
+}
+
+.meter-fill {
+  @apply h-full bg-flare transition-[width] duration-500;
+}
+
+.meter-label {
+  @apply mt-2 font-mono text-[0.625rem] font-medium uppercase tracking-[0.12em] text-ink-faint;
+}
+
+.section-empty {
+  @apply mt-1 text-[0.875rem] text-ink-faint;
+}
+
+.empty {
+  @apply flex flex-col items-center mt-10 px-5 py-10 text-center
+         bg-paper-raised border border-dashed border-rule-strong rounded-sm;
+}
+
+.empty-line {
+  @apply font-display text-[1.25rem] font-semibold text-ink;
+  font-variation-settings:
+    'SOFT' 20,
+    'WONK' 1;
 }
 </style>

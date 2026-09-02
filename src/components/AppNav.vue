@@ -18,54 +18,118 @@ async function handleSignOut() {
 </script>
 
 <template>
-  <nav class="bg-bg-subtle border-b border-border sticky top-0 z-100 backdrop-blur-[12px]">
-    <div class="max-w-5xl mx-auto px-6 flex items-center gap-8 h-14">
-      <RouterLink
-        to="/"
-        class="text-base font-bold tracking-[0.04em] text-primary no-underline shrink-0"
-      >
-        TM
-      </RouterLink>
-      <div class="flex items-center gap-1 overflow-x-auto flex-1">
+  <!-- Masthead: identity and account. On a phone it carries no navigation. -->
+  <header class="masthead">
+    <div class="masthead-inner">
+      <RouterLink to="/" class="wordmark"> Tarefas<span class="wordmark-dot">.</span> </RouterLink>
+
+      <nav class="hidden sm:flex items-center gap-1 ml-4">
         <RouterLink to="/" class="nav-link nav-link-exact">Resumo</RouterLink>
         <RouterLink to="/tasks" class="nav-link">Tarefas</RouterLink>
-      </div>
-      <div v-if="authStore.user" class="flex items-center gap-2 shrink-0 ml-auto">
+      </nav>
+
+      <div v-if="authStore.user" class="flex items-center gap-2 ml-auto shrink-0">
         <img
           v-if="authStore.user.photoURL"
           :src="authStore.user.photoURL"
           :alt="authStore.user.displayName ?? 'Avatar'"
-          class="w-7 h-7 rounded-full"
+          class="w-7 h-7 rounded-full border border-ink"
           referrerpolicy="no-referrer"
         />
-        <span
-          class="text-[0.8125rem] text-text-secondary whitespace-nowrap max-w-[120px] overflow-hidden text-ellipsis"
-        >
-          {{ authStore.user.displayName }}
-        </span>
-        <button
-          class="px-2 py-1 text-xs font-medium text-text-muted bg-transparent border border-border rounded-sm cursor-pointer whitespace-nowrap transition-colors duration-[120ms] hover:text-danger hover:border-danger"
-          @click="handleSignOut"
-        >
-          Sair
-        </button>
+        <button type="button" class="signout" @click="handleSignOut">Sair</button>
       </div>
     </div>
+  </header>
+
+  <!-- Thumb-reachable navigation, phones only. -->
+  <nav v-if="authStore.user" class="dock sm:hidden" aria-label="Navegacao">
+    <RouterLink to="/" class="dock-link dock-link-exact">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 5h7v6H4zM13 5h7v3h-7zM13 10h7v9h-7zM4 13h7v6H4z" />
+      </svg>
+      Resumo
+    </RouterLink>
+    <RouterLink to="/tasks" class="dock-link">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 6h3v3H4zM9 6.5h11v2H9zM4 11h3v3H4zM9 11.5h11v2H9zM4 16h3v3H4zM9 16.5h11v2H9z" />
+      </svg>
+      Tarefas
+    </RouterLink>
   </nav>
 </template>
 
 <style scoped>
 @reference "../assets/main.css";
 
+.masthead {
+  @apply sticky top-0 z-40 bg-paper border-b-2 border-ink;
+  padding-top: env(safe-area-inset-top);
+}
+
+.masthead-inner {
+  @apply max-w-4xl mx-auto px-4 flex items-center h-14;
+}
+
+/* Fraunces at a display size with the wonk axis on: the one typographic flourish. */
+.wordmark {
+  @apply font-display text-[1.35rem] leading-none font-black tracking-[-0.03em]
+         text-ink no-underline shrink-0;
+  font-variation-settings:
+    'SOFT' 0,
+    'WONK' 1;
+}
+
+.wordmark:hover {
+  @apply text-ink;
+}
+
+.wordmark-dot {
+  @apply text-flare;
+}
+
 .nav-link {
-  @apply px-[0.7rem] py-[0.35rem] text-[0.8125rem] font-medium text-text-muted no-underline
-         rounded-sm whitespace-nowrap transition-[color,background] duration-[120ms];
+  @apply px-2.5 py-1.5 font-mono text-[0.6875rem] font-medium uppercase tracking-[0.12em]
+         text-ink-soft no-underline rounded-sm whitespace-nowrap
+         transition-colors duration-[120ms];
 }
 .nav-link:hover {
-  @apply text-text-secondary bg-surface-hover;
+  @apply text-ink bg-paper-sunk;
 }
 .nav-link.router-link-active:not(.nav-link-exact),
 .nav-link-exact.router-link-exact-active {
-  @apply text-primary bg-primary-dim;
+  @apply text-ink bg-flare-dim;
+  box-shadow: inset 0 -2px 0 var(--color-flare);
+}
+
+.signout {
+  @apply min-h-9 px-2.5 font-mono text-[0.625rem] font-medium uppercase tracking-[0.12em]
+         text-ink-faint bg-transparent border border-rule-strong rounded-sm
+         cursor-pointer whitespace-nowrap transition-colors duration-[120ms];
+}
+.signout:hover {
+  @apply text-alarm border-alarm;
+}
+
+.dock {
+  @apply fixed bottom-0 left-0 right-0 z-40 flex items-stretch
+         bg-paper border-t-2 border-ink;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.dock-link {
+  @apply flex-1 flex flex-col items-center justify-center gap-0.5 py-2 min-h-14
+         font-mono text-[0.625rem] font-medium uppercase tracking-[0.1em]
+         text-ink-faint no-underline transition-colors duration-[120ms];
+}
+
+.dock-link svg {
+  @apply w-5 h-5;
+  fill: currentColor;
+}
+
+.dock-link.router-link-active:not(.dock-link-exact),
+.dock-link-exact.router-link-exact-active {
+  @apply text-ink bg-flare-dim;
+  box-shadow: inset 0 2px 0 var(--color-flare);
 }
 </style>

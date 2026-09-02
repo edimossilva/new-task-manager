@@ -57,6 +57,18 @@ export const usePeriodStore = defineStore('period', () => {
   // Catches the common case: the tab was hidden across the boundary.
   document.addEventListener('visibilitychange', refresh)
 
+  /**
+   * The browsable range. Both the year options and the step arrows read it, so
+   * stepping can never land on a year the select has no option for -- which
+   * would render that select blank.
+   */
+  const firstYear = computed(() => now.value.getFullYear() - YEARS_BACK)
+  const lastYear = computed(() => now.value.getFullYear())
+
+  function withinRange(parts: DateParts): boolean {
+    return parts.year >= firstYear.value && parts.year <= lastYear.value
+  }
+
   /** Materializes the full triple before editing one field of it. */
   function current(): DateParts {
     return selection.value ?? partsOf(now.value)
@@ -75,15 +87,13 @@ export const usePeriodStore = defineStore('period', () => {
   }
 
   /**
-   * The browsable range. Both the year options and the step arrows read it, so
-   * stepping can never land on a year the select has no option for -- which
-   * would render that select blank.
+   * Sets all three fields at once. Tapping a day in the week strip must not go
+   * through setMonth then setDay, which would clamp against the wrong month.
    */
-  const firstYear = computed(() => now.value.getFullYear() - YEARS_BACK)
-  const lastYear = computed(() => now.value.getFullYear())
-
-  function withinRange(parts: DateParts): boolean {
-    return parts.year >= firstYear.value && parts.year <= lastYear.value
+  function setDate(date: Date): void {
+    const parts = partsOf(date)
+    if (!withinRange(parts)) return
+    selection.value = isSameDayParts(parts, partsOf(now.value)) ? null : parts
   }
 
   /** Moves the selection by whole days, rolling over months and years. */
@@ -117,6 +127,7 @@ export const usePeriodStore = defineStore('period', () => {
     setYear,
     setMonth,
     setDay,
+    setDate,
     step,
     canStep,
     clear,

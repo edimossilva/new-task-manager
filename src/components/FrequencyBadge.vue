@@ -11,19 +11,27 @@ defineProps<{ frequency: TaskFrequency }>()
 <style scoped>
 @reference "../assets/main.css";
 
+/* An overprinted ink chip: coloured rule, tinted ground, letterspaced mono. */
 .badge {
-  @apply inline-block px-2 py-0.5 rounded-full text-xs font-semibold text-white whitespace-nowrap;
+  @apply inline-block px-1.5 py-0.5 font-mono text-[0.625rem] font-medium uppercase
+         tracking-[0.1em] leading-[1.5] whitespace-nowrap border rounded-[2px];
 }
 .badge.daily {
-  @apply bg-freq-daily;
+  @apply text-freq-daily border-freq-daily bg-flare-dim;
 }
 .badge.weekly {
-  @apply bg-freq-weekly;
+  color: var(--color-freq-weekly);
+  border-color: var(--color-freq-weekly);
+  background: color-mix(in srgb, var(--color-freq-weekly) 10%, transparent);
 }
 .badge.monthly {
-  @apply bg-freq-monthly;
+  color: var(--color-freq-monthly);
+  border-color: var(--color-freq-monthly);
+  background: color-mix(in srgb, var(--color-freq-monthly) 12%, transparent);
 }
 .badge.yearly {
-  @apply bg-freq-yearly;
+  color: var(--color-freq-yearly);
+  border-color: var(--color-freq-yearly);
+  background: color-mix(in srgb, var(--color-freq-yearly) 10%, transparent);
 }
 </style>

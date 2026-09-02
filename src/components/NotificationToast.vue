@@ -6,45 +6,71 @@ const store = useNotificationStore()
 
 <template>
   <Teleport to="body">
-    <div class="fixed top-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none">
+    <!--
+      Above the thumb on a phone (clear of the bottom nav), top-right on a
+      desktop where there is no bar to avoid.
+    -->
+    <div class="toast-layer">
       <TransitionGroup name="toast">
-        <div
+        <button
           v-for="notification in store.notifications"
           :key="notification.id"
-          class="pointer-events-auto px-4 py-3 rounded-lg shadow-lg text-sm font-medium max-w-sm cursor-pointer"
-          :class="{
-            'bg-emerald-600 text-white': notification.type === 'success',
-            'bg-red-600 text-white': notification.type === 'error',
-          }"
+          type="button"
+          class="toast"
+          :class="notification.type"
           @click="store.dismiss(notification.id)"
         >
           {{ notification.message }}
-        </div>
+        </button>
       </TransitionGroup>
     </div>
   </Teleport>
 </template>
 
 <style scoped>
-.toast-enter-active {
-  transition:
-    opacity 0.2s ease,
-    transform 0.2s ease;
+@reference "../assets/main.css";
+
+.toast-layer {
+  @apply fixed z-[9999] flex flex-col-reverse gap-2 pointer-events-none
+         left-4 right-4 bottom-[calc(4.5rem+env(safe-area-inset-bottom))]
+         sm:left-auto sm:right-5 sm:bottom-auto sm:top-5 sm:flex-col sm:max-w-sm;
 }
 
-.toast-leave-active {
+.toast {
+  @apply pointer-events-auto w-full px-4 py-3 text-left font-sans text-sm font-medium
+         border-2 rounded-sm cursor-pointer;
+  box-shadow: var(--shadow-stamp-sm);
+}
+
+.toast.success {
+  @apply bg-paper-raised text-ink border-ink;
+}
+
+.toast.error {
+  @apply bg-alarm text-paper border-ink;
+}
+
+.toast-enter-active,
+.toast-leave-active,
+.toast-move {
   transition:
-    opacity 0.15s ease,
-    transform 0.15s ease;
+    opacity 180ms ease,
+    transform 220ms cubic-bezier(0.34, 1.4, 0.64, 1);
 }
 
 .toast-enter-from {
   opacity: 0;
-  transform: translateX(1rem);
+  transform: translateY(0.75rem) rotate(-1.5deg);
 }
 
 .toast-leave-to {
   opacity: 0;
-  transform: translateX(1rem);
+  transform: translateY(0.5rem) scale(0.96);
+}
+
+@media (min-width: 640px) {
+  .toast-enter-from {
+    transform: translateX(1rem) rotate(1.5deg);
+  }
 }
 </style>
