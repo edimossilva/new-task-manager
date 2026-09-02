@@ -1,14 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
-import type { Task, TaskFrequency } from '@/entities'
-import { FREQUENCIES, FREQUENCY_LABELS, formatDate } from '@/entities'
+import type { Task } from '@/entities'
+import { FREQUENCIES, formatDate } from '@/entities'
 import { useAuthStore } from '@/stores/auth-store'
 import { useTaskStore } from '@/stores/task-store'
 import { usePeriodSelection } from '@/composables/use-period-selection'
-import FrequencyBadge from '@/components/FrequencyBadge.vue'
-import WeekdayBadge from '@/components/WeekdayBadge.vue'
+import DashTaskGroups, { type TaskGroup } from '@/components/DashTaskGroups.vue'
 import PeriodSelector from '@/components/PeriodSelector.vue'
-import TaskCheckbox from '@/components/TaskCheckbox.vue'
 
 const authStore = useAuthStore()
 const store = useTaskStore()
@@ -18,10 +16,6 @@ onMounted(() => store.loadAll())
 
 function isCompleted(task: Task): boolean {
   return store.isCompletedFor(task, referenceDate.value)
-}
-
-function isLate(task: Task): boolean {
-  return store.isLateOn(task, referenceDate.value)
 }
 
 // Only tasks actually due on the browsed date: ones created later never had a
@@ -38,18 +32,17 @@ const progress = computed(() => {
   return Math.round((completed.value.length / visibleTasks.value.length) * 100)
 })
 
-const pendingByFrequency = computed(() =>
-  FREQUENCIES.map((frequency) => ({
+function groupByFrequency(tasks: Task[]): TaskGroup[] {
+  return FREQUENCIES.map((frequency) => ({
     frequency,
-    tasks: pending.value.filter((task) => task.frequency === frequency),
-  })).filter((group) => group.tasks.length > 0),
-)
+    tasks: tasks.filter((task) => task.frequency === frequency),
+  })).filter((group) => group.tasks.length > 0)
+}
+
+const pendingByFrequency = computed(() => groupByFrequency(pending.value))
+const completedByFrequency = computed(() => groupByFrequency(completed.value))
 
 const firstName = computed(() => authStore.user?.displayName?.split(' ')[0] ?? '')
-
-function groupLabel(frequency: TaskFrequency): string {
-  return FREQUENCY_LABELS[frequency]
-}
 </script>
 
 <template>
@@ -99,28 +92,12 @@ function groupLabel(frequency: TaskFrequency): string {
     <p v-else-if="pendingByFrequency.length === 0">
       {{ isToday ? 'Tudo em dia por aqui.' : 'Tudo concluido neste dia.' }}
     </p>
-    <div v-for="group in pendingByFrequency" :key="group.frequency" class="dash-section">
-      <div class="flex items-center gap-2 mb-2">
-        <FrequencyBadge :frequency="group.frequency" />
-        <span class="text-[0.8125rem] text-text-muted">
-          {{ group.tasks.length }} {{ group.tasks.length === 1 ? 'tarefa' : 'tarefas' }}
-          <span class="sr-only">{{ groupLabel(group.frequency) }}</span>
-        </span>
-      </div>
-      <ul>
-        <li v-for="task in group.tasks" :key="task.id" class="dash-row">
-          <TaskCheckbox
-            :task="task"
-            :completed="false"
-            :period-label="formatDate(referenceDate)"
-            @toggle="store.toggleCompletion(task.id, referenceDate)"
-          />
-          <span class="text-sm text-text-secondary">{{ task.title }}</span>
-          <WeekdayBadge v-if="task.weekday" :weekday="task.weekday" />
-          <span v-if="isLate(task)" class="text-xs font-semibold text-danger">Atrasada</span>
-        </li>
-      </ul>
-    </div>
+    <DashTaskGroups :groups="pendingByFrequency" :completed="false" />
+
+    <template v-if="completedByFrequency.length">
+      <h2 class="mt-8 mb-3">Concluidas</h2>
+      <DashTaskGroups :groups="completedByFrequency" :completed="true" />
+    </template>
   </template>
 
   <p v-else>
@@ -141,11 +118,5 @@ function groupLabel(frequency: TaskFrequency): string {
 }
 .dash-value {
   @apply text-2xl font-bold text-text;
-}
-.dash-section {
-  @apply mt-4 px-5 py-4 bg-surface border border-border rounded-lg;
-}
-.dash-row {
-  @apply flex items-center gap-3 py-1.5;
 }
 </style>
