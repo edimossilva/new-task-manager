@@ -1,4 +1,4 @@
-import type { TaskFrequency } from './task'
+import type { TaskFrequency, Weekday } from './task'
 
 /**
  * Sort weight for frequencies. Sorting on the label would order them
@@ -43,6 +43,33 @@ const CURRENT_PERIOD_LABELS: Record<TaskFrequency, string> = {
   yearly: 'Este ano',
 }
 
+export const WEEKDAYS: Weekday[] = [1, 2, 3, 4, 5, 6, 7]
+
+export const WEEKDAY_LABELS: Record<Weekday, string> = {
+  1: 'Segunda',
+  2: 'Terca',
+  3: 'Quarta',
+  4: 'Quinta',
+  5: 'Sexta',
+  6: 'Sabado',
+  7: 'Domingo',
+}
+
+export const WEEKDAY_SHORT: Record<Weekday, string> = {
+  1: 'Seg',
+  2: 'Ter',
+  3: 'Qua',
+  4: 'Qui',
+  5: 'Sex',
+  6: 'Sab',
+  7: 'Dom',
+}
+
+/** ISO-8601 weekday, Monday = 1 .. Sunday = 7. The only `getDay()` call in the app. */
+export function isoWeekday(date: Date): number {
+  return ((date.getDay() + 6) % 7) + 1
+}
+
 function pad(value: number): string {
   return String(value).padStart(2, '0')
 }
@@ -54,12 +81,12 @@ function pad(value: number): string {
  */
 export function isoWeek(date: Date): { year: number; week: number } {
   const target = new Date(date.getFullYear(), date.getMonth(), date.getDate())
-  const dayOfWeek = (target.getDay() + 6) % 7 // Monday = 0
+  const dayOfWeek = isoWeekday(target) - 1 // Monday = 0
   target.setDate(target.getDate() - dayOfWeek + 3) // Thursday of this ISO week
 
   const isoYear = target.getFullYear()
   const firstThursday = new Date(isoYear, 0, 4)
-  firstThursday.setDate(firstThursday.getDate() - ((firstThursday.getDay() + 6) % 7) + 3)
+  firstThursday.setDate(firstThursday.getDate() - (isoWeekday(firstThursday) - 1) + 3)
 
   // Both dates are the Thursday of their week, so the gap is an exact multiple
   // of 7 days and Math.round absorbs any DST shift along the way.

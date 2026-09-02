@@ -25,8 +25,12 @@ export const useTaskStore = defineStore('task', () => {
     return createUseCases().isCompletedFor(task, referenceDate)
   }
 
-  function existsIn(task: Task, referenceDate: Date): boolean {
-    return createUseCases().existsIn(task, referenceDate)
+  function isDueOn(task: Task, referenceDate: Date): boolean {
+    return createUseCases().isDueOn(task, referenceDate)
+  }
+
+  function isLateOn(task: Task, referenceDate: Date): boolean {
+    return createUseCases().isLateOn(task, referenceDate)
   }
 
   function create(input: CreateTaskInput): boolean {
@@ -77,7 +81,8 @@ export const useTaskStore = defineStore('task', () => {
     loadAll,
     getById,
     isCompletedFor,
-    existsIn,
+    isDueOn,
+    isLateOn,
     create,
     update,
     remove,

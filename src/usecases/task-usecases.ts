@@ -1,5 +1,5 @@
 import type { CreateTaskInput, Task } from '@/entities'
-import { createTask, periodKey } from '@/entities'
+import { createTask, isoWeekday, periodKey } from '@/entities'
 import type { TaskRepository } from './ports'
 import { validateRequiredText } from './validation'
 
@@ -30,7 +30,13 @@ export class TaskUseCases {
     const error = validateRequiredText(input.title, 'Titulo')
     if (error) return { success: false, error }
 
-    this.taskRepo.create(createTask({ ...input, title: input.title.trim() }))
+    this.taskRepo.create(
+      createTask({
+        ...input,
+        title: input.title.trim(),
+        weekday: input.frequency === 'weekly' ? input.weekday : undefined,
+      }),
+    )
     return { success: true }
   }
 
@@ -41,7 +47,16 @@ export class TaskUseCases {
     // Changing the frequency leaves the old period keys in place. They can never
     // match a lookup in the new format, so the task correctly shows as pending,
     // and keeping them costs nothing while preserving the history.
-    this.taskRepo.update({ ...task, title: task.title.trim(), updatedAt: new Date() })
+    //
+    // The weekday is different: a stale one would silently hide the task if the
+    // frequency ever came back to weekly, so the invariant "weekday set implies
+    // weekly" is enforced here rather than trusted to the form.
+    this.taskRepo.update({
+      ...task,
+      title: task.title.trim(),
+      weekday: task.frequency === 'weekly' ? task.weekday : undefined,
+      updatedAt: new Date(),
+    })
     return { success: true }
   }
 
@@ -106,11 +121,56 @@ export class TaskUseCases {
     return periodKey(task.frequency, task.createdAt) <= periodKey(task.frequency, referenceDate)
   }
 
-  /** Tasks that existed in the period containing `referenceDate` and are still open. */
+  /**
+   * The weekday gate on its own: a weekly task pinned to a weekday does not show
+   * before that day of the week.
+   *
+   * Gating on `frequency` here too means a legacy or hand-edited document
+   * carrying a weekday on a non-weekly task still behaves correctly, rather than
+   * relying on the write path having always been clean.
+   */
+  private appearsOn(task: Task, referenceDate: Date): boolean {
+    if (task.frequency !== 'weekly' || task.weekday === undefined) return true
+    return isoWeekday(referenceDate) >= task.weekday
+  }
+
+  /**
+   * The single predicate the views filter by: the task existed then, and its
+   * weekday (if any) has come up.
+   */
+  isDueOn(task: Task, referenceDate: Date = new Date()): boolean {
+    return this.existsIn(task, referenceDate) && this.appearsOn(task, referenceDate)
+  }
+
+  /**
+   * Past its weekday within the same week and still not done, so it can still be
+   * caught up. Note a Sunday task can never be late -- there is no day after
+   * Sunday in an ISO week.
+   */
+  isLateOn(task: Task, referenceDate: Date = new Date()): boolean {
+    if (task.frequency !== 'weekly' || task.weekday === undefined) return false
+    if (isoWeekday(referenceDate) <= task.weekday) return false
+    if (this.isCompletedFor(task, referenceDate)) return false
+
+    // 'Atrasada' is a claim about the past. Browsing forward inside the current
+    // week must not make a day that has not happened look overdue.
+    if (referenceDate > new Date()) return false
+
+    // `existsIn` compares period keys, so a weekly task created on Friday
+    // "existed" from Monday of that week. Without this a task seconds old would
+    // be overdue for a due day that predates it.
+    const createdThisWeek =
+      periodKey('weekly', task.createdAt) === periodKey('weekly', referenceDate)
+    if (createdThisWeek && isoWeekday(task.createdAt) > task.weekday) return false
+
+    return true
+  }
+
+  /** Tasks due in the period containing `referenceDate` and still open. */
   pendingFor(referenceDate: Date = new Date()): Task[] {
     return this.taskRepo
       .getAll()
-      .filter((task) => this.existsIn(task, referenceDate))
+      .filter((task) => this.isDueOn(task, referenceDate))
       .filter((task) => !this.isCompletedFor(task, referenceDate))
   }
 }

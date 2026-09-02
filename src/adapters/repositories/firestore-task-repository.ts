@@ -1,5 +1,5 @@
 import { Timestamp, type DocumentData, type Firestore } from 'firebase/firestore'
-import type { Task, TaskFrequency } from '@/entities'
+import type { Task, TaskFrequency, Weekday } from '@/entities'
 import type { TaskRepository } from '@/usecases/ports'
 import { FirestoreRepository } from './firestore-repository'
 
@@ -9,10 +9,22 @@ function serialize(task: Task): DocumentData {
     title: task.title,
     description: task.description ?? null,
     frequency: task.frequency,
+    weekday: task.weekday ?? null,
     completions: task.completions,
     createdAt: Timestamp.fromDate(task.createdAt),
     updatedAt: Timestamp.fromDate(task.updatedAt),
   }
+}
+
+/**
+ * Out-of-range values collapse to undefined. A hand-edited `weekday: 8` would
+ * never satisfy the `>=` gate, leaving the task invisible and so unreachable and
+ * undeletable from the UI.
+ */
+function toWeekday(value: unknown): Weekday | undefined {
+  if (typeof value !== 'number' || !Number.isInteger(value)) return undefined
+  if (value < 1 || value > 7) return undefined
+  return value as Weekday
 }
 
 function deserialize(data: DocumentData): Task {
@@ -21,6 +33,7 @@ function deserialize(data: DocumentData): Task {
     title: data.title as string,
     description: (data.description as string | null) ?? undefined,
     frequency: data.frequency as TaskFrequency,
+    weekday: toWeekday(data.weekday),
     completions: (data.completions as string[] | undefined) ?? [],
     createdAt: (data.createdAt as Timestamp).toDate(),
     updatedAt: (data.updatedAt as Timestamp).toDate(),
