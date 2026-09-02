@@ -14,6 +14,7 @@ import { usePeriodSelection } from '@/composables/use-period-selection'
 import { useSortable } from '@/composables/use-sortable'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FrequencyBadge from '@/components/FrequencyBadge.vue'
+import WeekdayBadge from '@/components/WeekdayBadge.vue'
 import PeriodSelector from '@/components/PeriodSelector.vue'
 import TaskCheckbox from '@/components/TaskCheckbox.vue'
 
@@ -44,10 +45,15 @@ function isCompleted(task: Task): boolean {
   return store.isCompletedFor(task, referenceDate.value)
 }
 
+function isLate(task: Task): boolean {
+  return store.isLateOn(task, referenceDate.value)
+}
+
 const filteredTasks = computed(() =>
   store.tasks.filter((task) => {
-    if (!store.existsIn(task, referenceDate.value)) return false
+    if (!store.isDueOn(task, referenceDate.value)) return false
     if (frequencyFilter.value !== 'all' && task.frequency !== frequencyFilter.value) return false
+    // Overdue counts as pending -- it is not completed. Deliberate, do not "fix".
     if (statusFilter.value === 'pending') return !isCompleted(task)
     if (statusFilter.value === 'completed') return isCompleted(task)
     return true
@@ -58,7 +64,8 @@ const { sortedItems, sortBy, sortClass } = useSortable(filteredTasks, {
   title: (task) => task.title.toLowerCase(),
   // Sort on the ordinal, not the label, so Diaria comes before Semanal.
   frequency: (task) => FREQUENCY_ORDER[task.frequency],
-  status: (task) => (isCompleted(task) ? 1 : 0),
+  // Ascending puts what needs attention first: Atrasada, Pendente, Concluida.
+  status: (task) => (isCompleted(task) ? 2 : isLate(task) ? 0 : 1),
   lastCompletion: (task) => lastCompletionKey(task) ?? '',
 })
 
@@ -71,6 +78,15 @@ function confirmDelete(id: string) {
 
 function handleDelete() {
   if (pendingDeleteId.value) store.remove(pendingDeleteId.value)
+}
+
+const hiddenCount = computed(
+  () => store.tasks.filter((task) => !store.isDueOn(task, referenceDate.value)).length,
+)
+
+function situacao(task: Task): string {
+  if (isCompleted(task)) return 'Concluida'
+  return isLate(task) ? 'Atrasada' : 'Pendente'
 }
 
 function lastCompletion(task: Task): string {
@@ -141,8 +157,13 @@ function lastCompletion(task: Task): string {
             {{ task.description }}
           </span>
         </td>
-        <td><FrequencyBadge :frequency="task.frequency" /></td>
-        <td>{{ isCompleted(task) ? 'Concluida' : 'Pendente' }}</td>
+        <td>
+          <div class="flex items-center gap-1.5">
+            <FrequencyBadge :frequency="task.frequency" />
+            <WeekdayBadge v-if="task.weekday" :weekday="task.weekday" />
+          </div>
+        </td>
+        <td :class="{ 'text-danger font-medium': isLate(task) }">{{ situacao(task) }}</td>
         <td>{{ lastCompletion(task) }}</td>
         <td>
           <div class="actions">
@@ -155,8 +176,15 @@ function lastCompletion(task: Task): string {
       </tr>
     </tbody>
   </table>
+  <p v-else-if="filteredTasks.length === 0 && hiddenCount === store.tasks.length">
+    Nenhuma tarefa para este dia.
+  </p>
   <p v-else-if="store.tasks.length">Nenhuma tarefa corresponde aos filtros.</p>
   <p v-else>Nenhuma tarefa cadastrada.</p>
+
+  <p v-if="hiddenCount" class="mt-3 text-[0.8125rem] text-text-muted">
+    {{ hiddenCount }} {{ hiddenCount === 1 ? 'tarefa oculta' : 'tarefas ocultas' }} neste dia.
+  </p>
 
   <ConfirmDialog ref="confirmDialog" @confirm="handleDelete" />
 </template>

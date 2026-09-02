@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useTaskStore } from '@/stores/task-store'
 import { usePeriodSelection } from '@/composables/use-period-selection'
 import FrequencyBadge from '@/components/FrequencyBadge.vue'
+import WeekdayBadge from '@/components/WeekdayBadge.vue'
 import PeriodSelector from '@/components/PeriodSelector.vue'
 import TaskCheckbox from '@/components/TaskCheckbox.vue'
 
@@ -19,10 +20,14 @@ function isCompleted(task: Task): boolean {
   return store.isCompletedFor(task, referenceDate.value)
 }
 
-// Tasks created after the browsed period never had a chance to be done, so they
-// must not count towards it.
+function isLate(task: Task): boolean {
+  return store.isLateOn(task, referenceDate.value)
+}
+
+// Only tasks actually due on the browsed date: ones created later never had a
+// chance to be done, and a weekly task pinned to a weekday has not come up yet.
 const visibleTasks = computed(() =>
-  store.tasks.filter((task) => store.existsIn(task, referenceDate.value)),
+  store.tasks.filter((task) => store.isDueOn(task, referenceDate.value)),
 )
 
 const completed = computed(() => visibleTasks.value.filter(isCompleted))
@@ -71,14 +76,17 @@ function groupLabel(frequency: TaskFrequency): string {
       </div>
     </div>
 
-    <div class="mt-6">
+    <div v-if="visibleTasks.length" class="mt-6">
       <div class="flex items-center justify-between mb-1.5">
         <span class="text-[0.8125rem] font-medium text-text-secondary">
           {{ isToday ? 'Progresso do periodo' : `Progresso em ${formatDate(referenceDate)}` }}
         </span>
         <span class="text-[0.8125rem] font-semibold text-text">{{ progress }}%</span>
       </div>
-      <div class="h-2 w-full bg-surface-active rounded-full overflow-hidden">
+      <div
+        v-if="visibleTasks.length"
+        class="h-2 w-full bg-surface-active rounded-full overflow-hidden"
+      >
         <div
           class="h-full bg-success transition-[width] duration-300"
           :style="{ width: `${progress}%` }"
@@ -87,7 +95,8 @@ function groupLabel(frequency: TaskFrequency): string {
     </div>
 
     <h2 class="mt-8 mb-3">Pendentes</h2>
-    <p v-if="pendingByFrequency.length === 0">
+    <p v-if="visibleTasks.length === 0">Nenhuma tarefa para este dia.</p>
+    <p v-else-if="pendingByFrequency.length === 0">
       {{ isToday ? 'Tudo em dia por aqui.' : 'Tudo concluido neste dia.' }}
     </p>
     <div v-for="group in pendingByFrequency" :key="group.frequency" class="dash-section">
@@ -107,6 +116,8 @@ function groupLabel(frequency: TaskFrequency): string {
             @toggle="store.toggleCompletion(task.id, referenceDate)"
           />
           <span class="text-sm text-text-secondary">{{ task.title }}</span>
+          <WeekdayBadge v-if="task.weekday" :weekday="task.weekday" />
+          <span v-if="isLate(task)" class="text-xs font-semibold text-danger">Atrasada</span>
         </li>
       </ul>
     </div>
