@@ -261,6 +261,32 @@
     @apply w-auto py-1 pl-2 pr-8 text-[0.8125rem];
   }
 
+  .tabs {
+    @apply flex items-center gap-1 border-b border-border;
+  }
+
+  .tab {
+    @apply px-3 py-2 -mb-px text-[0.8125rem] font-medium text-text-muted bg-transparent
+           border-0 border-b-2 border-transparent cursor-pointer whitespace-nowrap
+           transition-[color,border-color] duration-[120ms];
+  }
+
+  .tab:hover {
+    @apply text-text-secondary;
+  }
+
+  .tab[aria-selected='true'] {
+    @apply text-primary border-primary;
+  }
+
+  .tab-count {
+    @apply ml-1.5 text-xs text-text-muted font-normal;
+  }
+
+  .tab[aria-selected='true'] .tab-count {
+    @apply text-primary;
+  }
+
   .form-group {
     @apply mb-5;
   }

@@ -20,6 +20,12 @@ import TaskCheckbox from '@/components/TaskCheckbox.vue'
 
 type StatusFilter = 'all' | 'pending' | 'completed'
 
+const STATUS_TABS: { value: StatusFilter; label: string }[] = [
+  { value: 'all', label: 'Todas' },
+  { value: 'pending', label: 'Pendentes' },
+  { value: 'completed', label: 'Concluidas' },
+]
+
 const store = useTaskStore()
 const { referenceDate, today } = usePeriodSelection()
 
@@ -49,11 +55,25 @@ function isLate(task: Task): boolean {
   return store.isLateOn(task, referenceDate.value)
 }
 
-const filteredTasks = computed(() =>
+// Due on the selected day and matching the frequency filter, before the status
+// tab narrows it. The tab counts read this, so they stay stable as you switch.
+const dueTasks = computed(() =>
   store.tasks.filter((task) => {
     if (!store.isDueOn(task, referenceDate.value)) return false
     if (frequencyFilter.value !== 'all' && task.frequency !== frequencyFilter.value) return false
-    // Overdue counts as pending -- it is not completed. Deliberate, do not "fix".
+    return true
+  }),
+)
+
+const statusCounts = computed(() => ({
+  all: dueTasks.value.length,
+  // Overdue counts as pending -- it is not completed. Deliberate, do not "fix".
+  pending: dueTasks.value.filter((task) => !isCompleted(task)).length,
+  completed: dueTasks.value.filter((task) => isCompleted(task)).length,
+}))
+
+const filteredTasks = computed(() =>
+  dueTasks.value.filter((task) => {
     if (statusFilter.value === 'pending') return !isCompleted(task)
     if (statusFilter.value === 'completed') return isCompleted(task)
     return true
@@ -118,14 +138,21 @@ function lastCompletion(task: Task): string {
         </option>
       </select>
     </div>
-    <div>
-      <label for="status-filter">Situacao</label>
-      <select id="status-filter" v-model="statusFilter" class="select-compact">
-        <option value="all">Todas</option>
-        <option value="pending">Pendentes</option>
-        <option value="completed">Concluidas</option>
-      </select>
-    </div>
+  </div>
+
+  <div v-if="store.tasks.length" class="tabs mt-4" role="tablist">
+    <button
+      v-for="tab in STATUS_TABS"
+      :key="tab.value"
+      type="button"
+      role="tab"
+      class="tab"
+      :aria-selected="statusFilter === tab.value"
+      @click="statusFilter = tab.value"
+    >
+      {{ tab.label }}
+      <span class="tab-count">{{ statusCounts[tab.value] }}</span>
+    </button>
   </div>
 
   <table v-if="sortedItems.length">
@@ -176,11 +203,11 @@ function lastCompletion(task: Task): string {
       </tr>
     </tbody>
   </table>
-  <p v-else-if="filteredTasks.length === 0 && hiddenCount === store.tasks.length">
-    Nenhuma tarefa para este dia.
-  </p>
-  <p v-else-if="store.tasks.length">Nenhuma tarefa corresponde aos filtros.</p>
-  <p v-else>Nenhuma tarefa cadastrada.</p>
+  <p v-else-if="store.tasks.length === 0">Nenhuma tarefa cadastrada.</p>
+  <p v-else-if="dueTasks.length === 0">Nenhuma tarefa para este dia.</p>
+  <p v-else-if="statusFilter === 'completed'">Nenhuma tarefa concluida neste dia.</p>
+  <p v-else-if="statusFilter === 'pending'">Nenhuma tarefa pendente neste dia.</p>
+  <p v-else>Nenhuma tarefa corresponde aos filtros.</p>
 
   <p v-if="hiddenCount" class="mt-3 text-[0.8125rem] text-text-muted">
     {{ hiddenCount }} {{ hiddenCount === 1 ? 'tarefa oculta' : 'tarefas ocultas' }} neste dia.

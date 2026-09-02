@@ -1,8 +1,11 @@
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { daysInMonth } from '@/entities'
 
 const REFRESH_MS = 60_000
+
+/** How far back the selector lets you browse. Also bounds the step arrows. */
+const YEARS_BACK = 2
 
 interface DateParts {
   year: number
@@ -16,6 +19,15 @@ function partsOf(date: Date): DateParts {
 
 function clampDay(parts: DateParts): DateParts {
   return { ...parts, day: Math.min(parts.day, daysInMonth(parts.year, parts.month)) }
+}
+
+/** Noon, so a DST shift can never move the result to a different day. */
+function toDate(parts: DateParts): Date {
+  return new Date(parts.year, parts.month - 1, parts.day, 12)
+}
+
+function isSameDayParts(a: DateParts, b: DateParts): boolean {
+  return a.year === b.year && a.month === b.month && a.day === b.day
 }
 
 /**
@@ -62,10 +74,51 @@ export const usePeriodStore = defineStore('period', () => {
     selection.value = clampDay({ ...current(), day })
   }
 
+  /**
+   * The browsable range. Both the year options and the step arrows read it, so
+   * stepping can never land on a year the select has no option for -- which
+   * would render that select blank.
+   */
+  const firstYear = computed(() => now.value.getFullYear() - YEARS_BACK)
+  const lastYear = computed(() => now.value.getFullYear())
+
+  function withinRange(parts: DateParts): boolean {
+    return parts.year >= firstYear.value && parts.year <= lastYear.value
+  }
+
+  /** Moves the selection by whole days, rolling over months and years. */
+  function step(days: number): void {
+    const next = toDate(current())
+    next.setDate(next.getDate() + days)
+    const parts = partsOf(next)
+    if (!withinRange(parts)) return
+
+    // Landing back on today resumes following the clock rather than pinning to
+    // it, so stepping away and back is a true round trip.
+    selection.value = isSameDayParts(parts, partsOf(now.value)) ? null : parts
+  }
+
+  function canStep(days: number): boolean {
+    const next = toDate(current())
+    next.setDate(next.getDate() + days)
+    return withinRange(partsOf(next))
+  }
+
   /** Back to following the clock. Must be null, not today's parts. */
   function clear(): void {
     selection.value = null
   }
 
-  return { now, selection, setYear, setMonth, setDay, clear }
+  return {
+    now,
+    selection,
+    firstYear,
+    lastYear,
+    setYear,
+    setMonth,
+    setDay,
+    step,
+    canStep,
+    clear,
+  }
 })
