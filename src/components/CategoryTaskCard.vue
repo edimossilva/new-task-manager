@@ -18,12 +18,18 @@ const props = withDefaults(
     index: number
     /**
      * The home page's density: no description, no last-completion meta, no row
-     * actions. Only the rows change -- the head and its meter are the unit's
+     * actions. Only the rows change; the head and its meter are the unit's
      * identity and read the same on both pages.
      */
     compact?: boolean
+    /**
+     * Drops the frequency badge, for a caller whose own heading already states
+     * it. Separate from `compact` because home's top band holds two
+     * frequencies, and there the badge is the only thing telling them apart.
+     */
+    hideFrequency?: boolean
   }>(),
-  { compact: false },
+  { compact: false, hideFrequency: false },
 )
 
 defineEmits<{ delete: [id: string] }>()
@@ -137,7 +143,7 @@ function lastCompletion(task: Task): string {
           -->
           <div class="task-foot">
             <div class="task-tags">
-              <FrequencyBadge :frequency="task.frequency" />
+              <FrequencyBadge v-if="!hideFrequency" :frequency="task.frequency" />
               <WeekdayBadge v-if="task.weekday" :weekday="task.weekday" />
               <span v-if="isLate(task)" class="task-late">Atrasada</span>
               <span v-if="!compact && lastCompletion(task)" class="task-meta figure">

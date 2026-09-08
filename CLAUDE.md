@@ -195,9 +195,21 @@ layers.
   - Row anatomy: tags and actions share one baseline instead of the actions standing in a column
     of their own, which made every row twice as tall as its content and cost the card 110px of
     width it does not have three-across.
-  - The **home page** is one rack of the same units under `compact`, which changes only the rows:
-    no description, no last-completion meta, no actions. The head and its meter are the unit's
+  - The **home page** stacks its units in three **horizon bands** (`BANDS` in `HomeView`): Curto
+    prazo (daily + weekly) on top, Mensal, then Anual. Weekly rides with daily because both are
+    cadences you act on this week, while a monthly or yearly task is a landmark you check in on.
+    Each band holds its own rack, so a category with a daily and a monthly task appears once per
+    band -- the band is the outer axis, the category the inner. A band's rule runs through its
+    `--color-freq-*` inks and burns off, and carries its own done/total; empty bands are dropped
+    rather than shown.
+  - Home passes `compact`, which changes only the rows: no description, no last-completion meta,
+    no actions. `hideFrequency` is a SEPARATE prop, set per band: the two-frequency top band keeps
+    the badges, because there they are the only thing telling its rows apart, while Mensal and
+    Anual drop them since the band label already says it. The head and its meter are the unit's
     identity and read the same on both pages.
+  - `buildCategoryRack()` is a plain function precisely because of the bands: `useCategoryRack()`
+    wraps it for the tasks page, which has one rack, while home builds one per band inside a
+    single computed, which a composable could not do in a loop.
   - Home has **no Pendentes / Concluidas split**: one card per category, holding all of it. The
     sort carries what the split used to say -- Atrasada, then pending, then done, so what needs
     attention rises and what is finished sinks under it -- and the head's ratio plus meter turn

@@ -1,14 +1,27 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
-import type { Task } from '@/entities'
+import type { Task, TaskFrequency } from '@/entities'
 import { FREQUENCY_ORDER, formatDate } from '@/entities'
 import { useAuthStore } from '@/stores/auth-store'
 import { useTaskStore } from '@/stores/task-store'
 import { useCategoryStore } from '@/stores/category-store'
 import { usePeriodSelection } from '@/composables/use-period-selection'
-import { useCategoryRack } from '@/composables/use-category-rack'
+import { buildCategoryRack } from '@/composables/use-category-rack'
 import CategoryTaskCard from '@/components/CategoryTaskCard.vue'
+
 import PeriodSelector from '@/components/PeriodSelector.vue'
+
+/**
+ * The three horizons the day is read in. Weekly rides with daily: both are
+ * cadences you act on this week, while a monthly or a yearly task is a landmark
+ * you check in on. A band naming two frequencies keeps the row badges, which is
+ * then the only thing telling its tasks apart.
+ */
+const BANDS: { key: string; label: string; frequencies: TaskFrequency[] }[] = [
+  { key: 'short', label: 'Curto prazo', frequencies: ['daily', 'weekly'] },
+  { key: 'monthly', label: 'Mensal', frequencies: ['monthly'] },
+  { key: 'yearly', label: 'Anual', frequencies: ['yearly'] },
+]
 
 const authStore = useAuthStore()
 const store = useTaskStore()
@@ -61,10 +74,9 @@ function statusRank(task: Task): number {
 }
 
 /**
- * A card holds its whole category now, so the sort carries what the Pendentes /
- * Concluidas split used to say: what needs attention rises, what is done sinks.
- * Frequency was the grouping before categories took that job, and survives here
- * as the tie-break -- dailies first, alphabetical inside each.
+ * A card holds its whole category within its band, so the sort carries what the
+ * Pendentes / Concluidas split used to say: what needs attention rises, what is
+ * done sinks under it.
  */
 const sortedTasks = computed(() =>
   [...visibleTasks.value].sort(
@@ -75,7 +87,31 @@ const sortedTasks = computed(() =>
   ),
 )
 
-const rack = useCategoryRack(sortedTasks)
+/**
+ * Strata by horizon: Curto prazo on top, Anual at the bottom. Each band holds
+ * its own rack, so a category with a daily and a monthly task appears once per
+ * band -- the band is the outer axis, the category the inner. Bands with
+ * nothing due are dropped rather than shown empty.
+ */
+const bands = computed(() =>
+  BANDS.map((band) => {
+    const tasks = sortedTasks.value.filter((task) => band.frequencies.includes(task.frequency))
+    const [first, second] = band.frequencies
+    return {
+      ...band,
+      done: tasks.filter(isCompleted).length,
+      total: tasks.length,
+      // The rule carries the band's frequency inks, in order, then burns off.
+      ink: {
+        '--band-ink': `var(--color-freq-${first})`,
+        '--band-ink-2': `var(--color-freq-${second ?? first})`,
+      },
+      /** With one frequency in the band, the badge on every row is the band's own label. */
+      hideFrequency: band.frequencies.length === 1,
+      rack: buildCategoryRack(tasks, categoryStore.categories),
+    }
+  }).filter((band) => band.total > 0),
+)
 
 const firstName = computed(() => authStore.user?.displayName?.split(' ')[0] ?? '')
 </script>
@@ -113,17 +149,33 @@ const firstName = computed(() => authStore.user?.displayName?.split(' ')[0] ?? '
       </div>
     </section>
 
-    <p v-if="rack.length === 0" class="section-empty">Nenhuma tarefa para este dia.</p>
-    <div v-else class="rack mt-5">
-      <CategoryTaskCard
-        v-for="(unit, index) in rack"
-        :key="unit.key"
-        :category="unit.category"
-        :tasks="unit.tasks"
-        :index="index"
-        compact
-      />
-    </div>
+    <p v-if="bands.length === 0" class="section-empty">Nenhuma tarefa para este dia.</p>
+
+    <!--
+      One stratum per horizon. The rule is tinted with the frequency's own ink,
+      so the layers are told apart before the labels are read -- and the cards
+      inside keep their category inks, which is a different axis entirely.
+    -->
+    <section v-for="band in bands" :key="band.key" class="band" :style="band.ink">
+      <div class="band-head">
+        <h2 class="band-name">{{ band.label }}</h2>
+        <span class="band-rule" aria-hidden="true"></span>
+        <span class="band-count figure">
+          {{ band.done }}<span class="band-slash">/</span>{{ band.total }}
+        </span>
+      </div>
+      <div class="rack">
+        <CategoryTaskCard
+          v-for="(unit, index) in band.rack"
+          :key="unit.key"
+          :category="unit.category"
+          :tasks="unit.tasks"
+          :index="index"
+          compact
+          :hide-frequency="band.hideFrequency"
+        />
+      </div>
+    </section>
   </template>
 
   <div v-else class="empty">
@@ -181,6 +233,33 @@ const firstName = computed(() => authStore.user?.displayName?.split(' ')[0] ?? '
 
 .meter-checks {
   @apply text-[0.625rem] font-medium uppercase tracking-[0.12em] text-fg-faint;
+}
+
+.band {
+  @apply mt-6;
+}
+
+.band-head {
+  @apply flex items-center gap-3 mb-3;
+}
+
+.band-name {
+  @apply !mb-0 shrink-0 font-mono text-[0.75rem] font-medium uppercase tracking-[0.18em];
+  color: var(--band-ink);
+}
+
+/* The stratum line: it runs through the band's frequency inks, then burns off. */
+.band-rule {
+  @apply flex-1 h-px;
+  background: linear-gradient(90deg, var(--band-ink), var(--band-ink-2) 30%, transparent);
+}
+
+.band-count {
+  @apply shrink-0 text-[0.75rem] text-fg-soft;
+}
+
+.band-slash {
+  @apply text-fg-faint mx-px;
 }
 
 .section-empty {
