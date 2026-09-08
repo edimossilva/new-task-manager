@@ -20,6 +20,17 @@ export const FREQUENCY_LABELS: Record<TaskFrequency, string> = {
   yearly: 'Anual',
 }
 
+/**
+ * Field label for `timesPerPeriod`, named after the period the frequency spans.
+ * 'Vezes por periodo' is technically right and reads like a form nobody wrote.
+ */
+export const TIMES_PER_PERIOD_LABELS: Record<TaskFrequency, string> = {
+  daily: 'Vezes por dia',
+  weekly: 'Vezes por semana',
+  monthly: 'Vezes por mes',
+  yearly: 'Vezes por ano',
+}
+
 /** Portuguese month names, without diacritics, matching the rest of the UI. */
 export const MONTH_NAMES = [
   'Janeiro',

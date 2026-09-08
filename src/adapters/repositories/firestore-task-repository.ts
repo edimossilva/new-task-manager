@@ -1,5 +1,6 @@
 import { Timestamp, type DocumentData, type Firestore } from 'firebase/firestore'
 import type { Task, TaskFrequency, Weekday } from '@/entities'
+import { normalizeTimesPerPeriod } from '@/entities'
 import type { TaskRepository } from '@/usecases/ports'
 import { FirestoreRepository } from './firestore-repository'
 
@@ -11,6 +12,7 @@ function serialize(task: Task): DocumentData {
     frequency: task.frequency,
     categoryId: task.categoryId ?? null,
     weekday: task.weekday ?? null,
+    timesPerPeriod: task.timesPerPeriod,
     completions: task.completions,
     createdAt: Timestamp.fromDate(task.createdAt),
     updatedAt: Timestamp.fromDate(task.updatedAt),
@@ -36,6 +38,9 @@ function deserialize(data: DocumentData): Task {
     frequency: data.frequency as TaskFrequency,
     categoryId: (data.categoryId as string | null) ?? undefined,
     weekday: toWeekday(data.weekday),
+    // Missing on every task written before the feature, and the normalizer
+    // turns that absence into the 1 those tasks have always meant.
+    timesPerPeriod: normalizeTimesPerPeriod(data.timesPerPeriod),
     completions: (data.completions as string[] | undefined) ?? [],
     createdAt: (data.createdAt as Timestamp).toDate(),
     updatedAt: (data.updatedAt as Timestamp).toDate(),

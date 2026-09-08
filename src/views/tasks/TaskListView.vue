@@ -1,24 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import type { Task, TaskFrequency } from '@/entities'
-import {
-  FREQUENCIES,
-  FREQUENCY_LABELS,
-  FREQUENCY_ORDER,
-  formatDate,
-  formatPeriodLabel,
-  matchesFrequency,
-} from '@/entities'
+import { FREQUENCIES, FREQUENCY_LABELS, FREQUENCY_ORDER, matchesFrequency } from '@/entities'
 import { useTaskStore } from '@/stores/task-store'
 import { useCategoryStore } from '@/stores/category-store'
 import { usePeriodSelection } from '@/composables/use-period-selection'
 import { useSortable } from '@/composables/use-sortable'
+import { useCategoryRack } from '@/composables/use-category-rack'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
-import CategoryBadge from '@/components/CategoryBadge.vue'
-import FrequencyBadge from '@/components/FrequencyBadge.vue'
-import WeekdayBadge from '@/components/WeekdayBadge.vue'
 import PeriodSelector from '@/components/PeriodSelector.vue'
-import TaskStamp from '@/components/TaskStamp.vue'
+import CategoryTaskCard from '@/components/CategoryTaskCard.vue'
 
 type StatusFilter = 'all' | 'pending' | 'completed'
 
@@ -28,28 +19,22 @@ const STATUS_TABS: { value: StatusFilter; label: string }[] = [
   { value: 'completed', label: 'Concluidas' },
 ]
 
+const SORT_OPTIONS: { value: string; label: string }[] = [
+  { value: 'status', label: 'Situacao' },
+  { value: 'title', label: 'Titulo' },
+  { value: 'frequency', label: 'Frequencia' },
+  { value: 'lastCompletion', label: 'Ultima conclusao' },
+]
+
 const store = useTaskStore()
 const categoryStore = useCategoryStore()
-const { referenceDate, today } = usePeriodSelection()
+const { referenceDate } = usePeriodSelection()
 
 const frequencyFilter = ref<TaskFrequency | 'all'>('all')
-const categoryFilter = ref<string>('all')
 const statusFilter = ref<StatusFilter>('all')
 
 const confirmDialog = ref<InstanceType<typeof ConfirmDialog>>()
 const pendingDeleteId = ref<string>()
-
-/**
- * The latest completion written under the task's CURRENT frequency.
- *
- * A frequency change leaves keys of the old format behind, and mixed formats do
- * not sort chronologically -- within one year a weekly key outsorts every daily
- * key -- so the raw last element can be a stale key from the old format.
- */
-function lastCompletionKey(task: Task): string | undefined {
-  const own = task.completions.filter((key) => matchesFrequency(task.frequency, key))
-  return own[own.length - 1]
-}
 
 function isCompleted(task: Task): boolean {
   return store.isCompletedFor(task, referenceDate.value)
@@ -64,18 +49,9 @@ function isLate(task: Task): boolean {
 const dueTasks = computed(() =>
   store.tasks.filter((task) => {
     if (!store.isDueOn(task, referenceDate.value)) return false
-    if (frequencyFilter.value !== 'all' && task.frequency !== frequencyFilter.value) return false
-    if (categoryFilter.value === 'none' && task.categoryId) return false
-    if (categoryFilter.value !== 'all' && categoryFilter.value !== 'none') {
-      if (task.categoryId !== categoryFilter.value) return false
-    }
-    return true
+    return frequencyFilter.value === 'all' || task.frequency === frequencyFilter.value
   }),
 )
-
-function categoryOf(task: Task) {
-  return task.categoryId ? categoryStore.byId.get(task.categoryId) : undefined
-}
 
 const statusCounts = computed(() => ({
   all: dueTasks.value.length,
@@ -92,16 +68,30 @@ const filteredTasks = computed(() =>
   }),
 )
 
-const { sortedItems, sortBy, sortClass } = useSortable(filteredTasks, {
-  title: (task) => task.title.toLowerCase(),
-  // Sort on the ordinal, not the label, so Diaria comes before Semanal.
-  frequency: (task) => FREQUENCY_ORDER[task.frequency],
-  // Uncategorised sorts last ascending rather than first.
-  category: (task) => categoryOf(task)?.name.toLowerCase() ?? '\uffff',
-  // Ascending puts what needs attention first: Atrasada, Pendente, Concluida.
-  status: (task) => (isCompleted(task) ? 2 : isLate(task) ? 0 : 1),
-  lastCompletion: (task) => lastCompletionKey(task) ?? '',
-})
+/** The latest completion key written under the task's CURRENT frequency. */
+function lastCompletionKey(task: Task): string {
+  const own = task.completions.filter((key) => matchesFrequency(task.frequency, key))
+  return own[own.length - 1] ?? ''
+}
+
+// Sorting orders the rows INSIDE every card, so there is no key for category:
+// the cards are the categories. Situacao leads by default, which puts what needs
+// attention at the top of each unit.
+const { sortedItems, sortKey, sortAsc, sortBy } = useSortable(
+  filteredTasks,
+  {
+    title: (task) => task.title.toLowerCase(),
+    // Sort on the ordinal, not the label, so Diaria comes before Semanal.
+    frequency: (task) => FREQUENCY_ORDER[task.frequency],
+    // Ascending puts what needs attention first: Atrasada, Pendente, Concluida.
+    status: (task) => (isCompleted(task) ? 2 : isLate(task) ? 0 : 1),
+    lastCompletion: lastCompletionKey,
+  },
+  { key: 'status' },
+)
+
+// One card per category, in name order, with the unfiled bucket last.
+const rack = useCategoryRack(sortedItems)
 
 onMounted(() => {
   store.loadAll()
@@ -120,19 +110,6 @@ function handleDelete() {
 const hiddenCount = computed(
   () => store.tasks.filter((task) => !store.isDueOn(task, referenceDate.value)).length,
 )
-
-function situacao(task: Task): string {
-  if (isCompleted(task)) return 'Concluida'
-  return isLate(task) ? 'Atrasada' : 'Pendente'
-}
-
-function lastCompletion(task: Task): string {
-  const key = lastCompletionKey(task)
-  if (!key) return '-'
-  // The real today, not the browsed date: otherwise an August key would be
-  // labelled 'Hoje' while browsing August.
-  return formatPeriodLabel(task.frequency, key, today.value)
-}
 </script>
 
 <template>
@@ -155,15 +132,28 @@ function lastCompletion(task: Task): string {
         </option>
       </select>
     </div>
-    <div v-if="categoryStore.categories.length">
-      <label for="category-filter">Categoria</label>
-      <select id="category-filter" v-model="categoryFilter" class="select-compact">
-        <option value="all">Todas</option>
-        <option v-for="option in categoryStore.categories" :key="option.id" :value="option.id">
-          {{ option.name }}
-        </option>
-        <option value="none">Sem categoria</option>
-      </select>
+    <div>
+      <label for="sort-key">Ordenar</label>
+      <div class="flex items-stretch gap-1.5">
+        <select
+          id="sort-key"
+          class="select-compact"
+          :value="sortKey"
+          @change="sortBy(($event.target as HTMLSelectElement).value)"
+        >
+          <option v-for="option in SORT_OPTIONS" :key="option.value" :value="option.value">
+            {{ option.label }}
+          </option>
+        </select>
+        <button
+          type="button"
+          class="dir"
+          :aria-label="sortAsc ? 'Ordem crescente, inverter' : 'Ordem decrescente, inverter'"
+          @click="sortBy(sortKey!)"
+        >
+          {{ sortAsc ? '↑' : '↓' }}
+        </button>
+      </div>
     </div>
   </div>
 
@@ -182,94 +172,15 @@ function lastCompletion(task: Task): string {
     </button>
   </div>
 
-  <!--
-    Phones get cards, md+ gets the sortable table. Six columns cannot be read on
-    a 390px screen, and column sorting has no affordance without headers.
-  -->
-  <TransitionGroup v-if="sortedItems.length" tag="ul" name="card" class="relative md:hidden mt-3">
-    <li v-for="task in sortedItems" :key="task.id" class="card">
-      <TaskStamp
-        :task="task"
-        :completed="isCompleted(task)"
-        :period-label="formatDate(referenceDate)"
-        @toggle="store.toggleCompletion(task.id, referenceDate)"
-      />
-      <div class="min-w-0 flex-1">
-        <CategoryBadge v-if="categoryOf(task)" :category="categoryOf(task)!" class="mb-0.5" />
-        <p class="card-title" :class="{ struck: isCompleted(task) }">{{ task.title }}</p>
-        <p v-if="task.description" class="card-desc">{{ task.description }}</p>
-        <div class="flex flex-wrap items-center gap-1.5 mt-1.5">
-          <FrequencyBadge :frequency="task.frequency" />
-          <WeekdayBadge v-if="task.weekday" :weekday="task.weekday" />
-          <span v-if="isLate(task)" class="card-late">Atrasada</span>
-          <span class="card-meta figure">{{ lastCompletion(task) }}</span>
-        </div>
-      </div>
-      <div class="flex flex-col items-end shrink-0 -my-1">
-        <RouterLink :to="`/tasks/${task.id}/edit`" class="btn-link">Editar</RouterLink>
-        <button type="button" class="btn-link danger" @click="confirmDelete(task.id)">
-          Excluir
-        </button>
-      </div>
-    </li>
-  </TransitionGroup>
-
-  <div v-if="sortedItems.length" class="hidden md:block overflow-x-auto">
-    <table>
-      <thead>
-        <tr>
-          <th class="w-10"><span class="sr-only">Concluir</span></th>
-          <th :class="sortClass('title')" @click="sortBy('title')">Titulo</th>
-          <th :class="sortClass('category')" @click="sortBy('category')">Categoria</th>
-          <th :class="sortClass('frequency')" @click="sortBy('frequency')">Frequencia</th>
-          <th :class="sortClass('status')" @click="sortBy('status')">Situacao</th>
-          <th :class="sortClass('lastCompletion')" @click="sortBy('lastCompletion')">
-            Ultima conclusao
-          </th>
-          <th>Acoes</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="task in sortedItems" :key="task.id">
-          <td>
-            <TaskStamp
-              :task="task"
-              :completed="isCompleted(task)"
-              :period-label="formatDate(referenceDate)"
-              @toggle="store.toggleCompletion(task.id, referenceDate)"
-            />
-          </td>
-          <td :class="{ 'text-fg-faint line-through': isCompleted(task) }">
-            <span class="text-fg">{{ task.title }}</span>
-            <span v-if="task.description" class="block text-xs text-fg-faint">
-              {{ task.description }}
-            </span>
-          </td>
-          <td>
-            <CategoryBadge v-if="categoryOf(task)" :category="categoryOf(task)!" />
-            <span v-else class="text-fg-faint">-</span>
-          </td>
-          <td>
-            <div class="flex items-center gap-1.5">
-              <FrequencyBadge :frequency="task.frequency" />
-              <WeekdayBadge v-if="task.weekday" :weekday="task.weekday" />
-            </div>
-          </td>
-          <td :class="isLate(task) ? 'text-accent-text font-semibold' : ''">
-            {{ situacao(task) }}
-          </td>
-          <td class="figure text-[0.8125rem]">{{ lastCompletion(task) }}</td>
-          <td>
-            <div class="actions">
-              <RouterLink :to="`/tasks/${task.id}/edit`" class="btn-link">Editar</RouterLink>
-              <button type="button" class="btn-link danger" @click="confirmDelete(task.id)">
-                Excluir
-              </button>
-            </div>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+  <div v-if="rack.length" class="rack mt-4">
+    <CategoryTaskCard
+      v-for="(unit, index) in rack"
+      :key="unit.key"
+      :category="unit.category"
+      :tasks="unit.tasks"
+      :index="index"
+      @delete="confirmDelete"
+    />
   </div>
 
   <div v-else class="empty">
@@ -294,30 +205,20 @@ function lastCompletion(task: Task): string {
 <style scoped>
 @reference "../../assets/main.css";
 
-.card {
-  @apply flex items-start gap-3 px-3.5 py-3 mb-2 bg-panel
-         border border-line-strong rounded-sm;
+.dir {
+  @apply flex items-center justify-center w-11 min-h-11 shrink-0 font-mono text-[0.875rem]
+         text-fg-soft bg-well border border-line-strong cursor-pointer
+         transition-[color,border-color] duration-[140ms];
+  border-radius: var(--radius-sm);
 }
 
-.card-title {
-  @apply text-[0.9375rem] leading-snug font-medium text-fg break-words;
-}
-.card-title.struck {
-  @apply text-fg-faint line-through decoration-[1.5px];
-  text-decoration-color: var(--color-done);
+.dir:hover {
+  @apply text-fg border-accent-text;
 }
 
-.card-desc {
-  @apply mt-0.5 text-[0.8125rem] leading-snug text-fg-faint break-words;
-}
-
-.card-late {
-  @apply font-mono text-[0.625rem] font-medium uppercase tracking-[0.1em]
-         text-void bg-accent-text px-1.5 py-0.5 rounded-[2px];
-}
-
-.card-meta {
-  @apply text-[0.6875rem] text-fg-faint;
+.dir:focus-visible {
+  @apply outline-none border-accent;
+  box-shadow: 0 0 0 3px var(--color-accent-dim);
 }
 
 .empty {
@@ -327,24 +228,5 @@ function lastCompletion(task: Task): string {
 
 .hidden-note {
   @apply mt-3 text-[0.75rem] text-fg-faint;
-}
-
-.card-enter-active,
-.card-leave-active,
-.card-move {
-  transition:
-    opacity 180ms ease,
-    transform 240ms cubic-bezier(0.34, 1.3, 0.64, 1);
-}
-.card-enter-from {
-  opacity: 0;
-  transform: translateY(0.5rem);
-}
-.card-leave-to {
-  opacity: 0;
-  transform: scale(0.97);
-}
-.card-leave-active {
-  @apply absolute;
 }
 </style>

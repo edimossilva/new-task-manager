@@ -136,7 +136,7 @@
     --color-fg-faint: #7b8792;
     --color-line: rgba(14, 20, 25, 0.12);
     --color-line-strong: rgba(14, 20, 25, 0.3);
-    /* The one light theme, so the accent must darken instead of lighten. */
+    /* The one light theme, so inks must darken instead of lighten. */
     --color-accent-text: var(--color-accent-deep);
     --color-done: #167a55;
     --color-done-dim: rgba(22, 122, 85, 0.12);
@@ -499,6 +499,34 @@
 
   .tab[aria-selected='true'] .tab-count {
     @apply text-accent-text;
+  }
+
+  /*
+   * A CATEGORY ink used as TEXT. Bind `--cat-bright` and `--cat-deep` inline
+   * from the ink table and add this class; the theme picks the one that reads
+   * on its ground, exactly as `--color-accent-text` does for the accent.
+   *
+   * It has to be a SELECTOR rather than that same variable indirection: a
+   * custom property holding `var(--cat-bright)` is substituted where it is
+   * DECLARED, and declaring it at `:root` -- where no ink is bound -- makes it
+   * invalid at computed-value time, so every label silently fell back to the
+   * inherited colour. One rule here beats repeating the choice per component.
+   */
+  .ink-text {
+    color: var(--cat-bright);
+  }
+
+  [data-theme='alloy'] .ink-text {
+    color: var(--cat-deep);
+  }
+
+  /*
+   * A wall of category units. CSS columns rather than a grid: a unit with two
+   * tasks stays short instead of padding itself out to match a unit with nine,
+   * which is what makes the wall read as instruments and not as cells.
+   */
+  .rack {
+    @apply columns-1 gap-4 md:columns-2 xl:columns-3;
   }
 
   .figure {

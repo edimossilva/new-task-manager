@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import type { Task } from '@/entities'
-import { FREQUENCIES, formatDate } from '@/entities'
+import { FREQUENCY_ORDER, formatDate } from '@/entities'
 import { useAuthStore } from '@/stores/auth-store'
 import { useTaskStore } from '@/stores/task-store'
 import { useCategoryStore } from '@/stores/category-store'
 import { usePeriodSelection } from '@/composables/use-period-selection'
-import DashTaskGroups, { type TaskGroup } from '@/components/DashTaskGroups.vue'
+import { useCategoryRack } from '@/composables/use-category-rack'
+import CategoryTaskCard from '@/components/CategoryTaskCard.vue'
 import PeriodSelector from '@/components/PeriodSelector.vue'
 
 const authStore = useAuthStore()
@@ -32,20 +33,49 @@ const visibleTasks = computed(() =>
 const completed = computed(() => visibleTasks.value.filter(isCompleted))
 const pending = computed(() => visibleTasks.value.filter((task) => !isCompleted(task)))
 
+// Check-level totals, alongside the task-level ratio rather than replacing it:
+// a task at 3/8 is still one task left to finish, and the meter says so.
+const hasRepeats = computed(() => visibleTasks.value.some((task) => task.timesPerPeriod > 1))
+
+const checkTally = computed(() =>
+  visibleTasks.value.reduce(
+    (tally, task) => ({
+      done:
+        tally.done +
+        Math.min(store.completionCountFor(task, referenceDate.value), task.timesPerPeriod),
+      total: tally.total + task.timesPerPeriod,
+    }),
+    { done: 0, total: 0 },
+  ),
+)
+
 const progress = computed(() => {
   if (visibleTasks.value.length === 0) return 0
   return Math.round((completed.value.length / visibleTasks.value.length) * 100)
 })
 
-function groupByFrequency(tasks: Task[]): TaskGroup[] {
-  return FREQUENCIES.map((frequency) => ({
-    frequency,
-    tasks: tasks.filter((task) => task.frequency === frequency),
-  })).filter((group) => group.tasks.length > 0)
+/** Atrasada, then pending, then done -- the same order the tasks page defaults to. */
+function statusRank(task: Task): number {
+  if (isCompleted(task)) return 2
+  return store.isLateOn(task, referenceDate.value) ? 0 : 1
 }
 
-const pendingByFrequency = computed(() => groupByFrequency(pending.value))
-const completedByFrequency = computed(() => groupByFrequency(completed.value))
+/**
+ * A card holds its whole category now, so the sort carries what the Pendentes /
+ * Concluidas split used to say: what needs attention rises, what is done sinks.
+ * Frequency was the grouping before categories took that job, and survives here
+ * as the tie-break -- dailies first, alphabetical inside each.
+ */
+const sortedTasks = computed(() =>
+  [...visibleTasks.value].sort(
+    (a, b) =>
+      statusRank(a) - statusRank(b) ||
+      FREQUENCY_ORDER[a.frequency] - FREQUENCY_ORDER[b.frequency] ||
+      a.title.localeCompare(b.title),
+  ),
+)
+
+const rack = useCategoryRack(sortedTasks)
 
 const firstName = computed(() => authStore.user?.displayName?.split(' ')[0] ?? '')
 </script>
@@ -73,22 +103,27 @@ const firstName = computed(() => authStore.user?.displayName?.split(' ')[0] ?? '
       <div class="meter-track">
         <div class="meter-fill" :style="{ width: `${progress}%` }"></div>
       </div>
-      <p class="meter-label">
-        {{ progress === 100 ? 'Tudo concluido' : `${pending.length} restantes` }}
-      </p>
+      <div class="meter-foot">
+        <p class="meter-label">
+          {{ progress === 100 ? 'Tudo concluido' : `${pending.length} restantes` }}
+        </p>
+        <p v-if="hasRepeats" class="meter-checks figure">
+          {{ checkTally.done }}<span class="meter-slash">/</span>{{ checkTally.total }} marcacoes
+        </p>
+      </div>
     </section>
 
-    <h2 class="mt-7 mb-1">Pendentes</h2>
-    <p v-if="visibleTasks.length === 0" class="section-empty">Nenhuma tarefa para este dia.</p>
-    <p v-else-if="pendingByFrequency.length === 0" class="section-empty">
-      {{ isToday ? 'Tudo em dia por aqui.' : 'Tudo concluido neste dia.' }}
-    </p>
-    <DashTaskGroups :groups="pendingByFrequency" :completed="false" />
-
-    <template v-if="completedByFrequency.length">
-      <h2 class="mt-7 mb-1">Concluidas</h2>
-      <DashTaskGroups :groups="completedByFrequency" :completed="true" />
-    </template>
+    <p v-if="rack.length === 0" class="section-empty">Nenhuma tarefa para este dia.</p>
+    <div v-else class="rack mt-5">
+      <CategoryTaskCard
+        v-for="(unit, index) in rack"
+        :key="unit.key"
+        :category="unit.category"
+        :tasks="unit.tasks"
+        :index="index"
+        compact
+      />
+    </div>
   </template>
 
   <div v-else class="empty">
@@ -136,8 +171,16 @@ const firstName = computed(() => authStore.user?.displayName?.split(' ')[0] ?? '
   @apply h-full bg-accent transition-[width] duration-500;
 }
 
+.meter-foot {
+  @apply flex items-baseline justify-between gap-3 mt-2;
+}
+
 .meter-label {
-  @apply mt-2 font-mono text-[0.625rem] font-medium uppercase tracking-[0.12em] text-fg-faint;
+  @apply font-mono text-[0.625rem] font-medium uppercase tracking-[0.12em] text-fg-faint;
+}
+
+.meter-checks {
+  @apply text-[0.625rem] font-medium uppercase tracking-[0.12em] text-fg-faint;
 }
 
 .section-empty {

@@ -89,6 +89,46 @@ layers.
   document limit. Changing a task's
   frequency leaves the old keys in place: they can never match the new format, so the task correctly
   shows as pending, and keeping them preserves the history for free.
+- **Repeat count per period**: a task carries `timesPerPeriod` (1..`MAX_TIMES_PER_PERIOD`, 50).
+  The period key is stored **once per check-off**, so `completions` holds duplicates and "how many"
+  is a `filter().length` -- a count, never a tally that something would have to reset when the
+  period turns over. `isCompletedFor` becomes `count >= timesPerPeriod`; `>=` so lowering the target
+  on a task with more checks already recorded leaves the period done rather than permanently
+  overdone. Documents written before the feature have no field, and `deserialize` normalizes a
+  missing or out-of-range value to 1 -- exactly what those tasks always meant -- so there is no
+  migration.
+  - Three write paths, all of them going through the private `withCount`, which rewrites one
+    period to hold exactly N copies of its key and prunes the oldest OTHER keys to stay under
+    `MAX_COMPLETIONS`. `toggleCompletion` is now `advanceCompletion` (one check per click, and a
+    click on a full period clears it -- at `timesPerPeriod: 1` that is the old 0 -> 1 -> 0 toggle,
+    unchanged); `undoCompletion` takes one back; `setCompletionCount` writes an exact count, which
+    is what tapping a cell on the gauge means. The last two are **clamped, not refused**, and
+    undoing nothing is a success rather than an error -- reaching them out of range means a stale
+    render, and a toast about it would be noise.
+  - **`CompletionGauge`** is the visible half, and it is deliberately loud: a strip of cells, one
+    per required check, on its own line under the task title. A task wanting eight check-offs is a
+    different kind of thing from one wanting a tick, and the row should say so before it is read.
+    - Cells are the control, not a readout: tapping cell five writes five, tapping the last lit
+      cell puts it out. That is why there is no `-` button in cell mode -- two ways to decrement is
+      clutter.
+    - The button is 15x30 and the visible cell inside it 13x18. The strip keeps its instrument
+      proportions while the hit areas sit edge to edge, which is the only way a row of them is
+      usable with a thumb.
+    - Above `MAX_CELLS` (12) the strip degrades to one continuous hatched bar -- the home meter's
+      own track -- and the `-` button comes back as the fine control, because past a dozen the
+      cells are neither countable at a glance nor big enough to hit.
+    - Empty cells carry the 45-degree hatch that `.meter-track` uses, filled ones a `--color-done`
+      ground with a small bloom, and the next one up is edged in `--color-accent-text` so the strip
+      points at itself. Everything is drawn from role tokens, so it re-skins with the five themes.
+  - `TaskStamp`'s dial draws the ratio: `stroke-dashoffset` is **bound** rather than driven by a
+    keyframe, since the arc now has intermediate positions, and the button reports
+    `aria-checked="mixed"` when partly done. It derives "completed" from the count instead of
+    taking it as a prop, so the ring cannot disagree with the row it sits in.
+  - The home meter keeps counting whole tasks -- a task at 3/8 is one task left -- and gains a
+    second, check-level figure beside its label, shown only when something visible needs more than
+    one. Two numbers that mean different things, never one that means both.
+  - `MAX_COMPLETIONS` is unchanged. A task checked eight times a day spends the budget eight times
+    faster and still keeps well over a year of history.
 - **Design tokens are ROLES, never colour names** -- `void` (ground), `panel`, `well`, `fg`,
   `fg-soft`, `fg-faint`, `line`, `line-strong`. The same token is deep navy in one theme and cool
   aluminium in another, so `bg-paper` would have been a lie. Tailwind 4 **errors on an unknown
@@ -105,7 +145,12 @@ layers.
   washes. `bright` exists because darkening for contrast only works one way: `deep` on near-black
   is *less* visible than `base`, not more. Themes choose between them through
   **`--color-accent-text`** (`bright` by default, `deep` under `[data-theme='alloy']`), so no
-  component ever needs to know whether the ground is light or dark. Every value is verified at
+  component ever needs to know whether the ground is light or dark. Category inks make the same
+  choice through the shared **`.ink-text`** class: bind `--cat-bright` and `--cat-deep` inline and
+  add the class. That one has to be a SELECTOR rather than the same variable indirection -- a
+  custom property holding `var(--cat-bright)` is substituted where it is DECLARED, so declaring it
+  at `:root`, where no ink is bound, is invalid at computed-value time and every label silently
+  falls back to the inherited colour. Every value is verified at
   >= 4.5:1 against all five grounds. **Anywhere ground-coloured text sits on the accent, use
   `accent-text`, not `accent`** -- amber at base strength is 2.05:1. Only ink **names** are
   persisted, never hex. The table lives in TS rather than CSS: duplicating twenty quadruples into
@@ -130,6 +175,35 @@ layers.
     inline from `INKS` -- twenty per-ink CSS classes in each consumer was the alternative.
   - `CategoryBadge` is deliberately quieter than `FrequencyBadge` -- a dot plus text, no filled
     ground. Two saturated chips per row was too noisy on a phone.
+- **Both list pages are racks of category modules** (`CategoryTaskCard.vue`), one card per
+  category with the unfiled bucket last, laid out by the shared `.rack` class in CSS **columns**
+  (1 / 2 / 3 by breakpoint) so a unit with two tasks stays short instead of padding itself out to
+  match a unit with nine. `useCategoryRack()` does the grouping for both, preserving whatever
+  order the caller sorted into.
+  - Each unit wears its category's ink four ways: a rail down the left edge, a wash across the
+    head, a trace mixed into the hairline, and the fill of its own progress meter -- that
+    category's completions for the browsed period, on the same hatched track the home meter uses.
+    The unfiled unit has no ink, so its rail is drawn as a dashed gap and its meter goes grey.
+  - A task pointing at a category that no longer exists falls into the unfiled bucket rather than
+    out of the page. The delete guard makes it unlikely, but a task nothing renders is a task
+    nobody can edit or delete.
+  - This replaced the md+ sortable table, so sorting moved into an `Ordenar` select plus a
+    direction toggle, both driving the same `useSortable`: it orders the rows INSIDE every card
+    and has no `category` key, because the cards are the categories. `Situacao` leads by default,
+    which puts Atrasada at the top of each unit. The category filter went with the table for the
+    same reason -- scrolling to a card is the filter now.
+  - Row anatomy: tags and actions share one baseline instead of the actions standing in a column
+    of their own, which made every row twice as tall as its content and cost the card 110px of
+    width it does not have three-across.
+  - The **home page** is one rack of the same units under `compact`, which changes only the rows:
+    no description, no last-completion meta, no actions. The head and its meter are the unit's
+    identity and read the same on both pages.
+  - Home has **no Pendentes / Concluidas split**: one card per category, holding all of it. The
+    sort carries what the split used to say -- Atrasada, then pending, then done, so what needs
+    attention rises and what is finished sinks under it -- and the head's ratio plus meter turn
+    each card into that category's reading for the day. It replaced `DashTaskGroups`, which
+    grouped by frequency; frequency survives as the sort's tie-break (dailies first, then title)
+    and on every row's badge.
 - **Weekday-pinned weekly tasks**: a `weekly` task may carry an optional `weekday`
   (`Weekday = 1..7`, **ISO-8601 Monday = 1**). Completion is still the ISO **week** key, so the
   weekday says only *when in the week the task is due* -- adding or changing one needs no migration

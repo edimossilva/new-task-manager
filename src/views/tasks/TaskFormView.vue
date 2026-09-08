@@ -2,11 +2,19 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import type { Task, TaskFrequency, Weekday } from '@/entities'
-import { FREQUENCIES, FREQUENCY_LABELS, WEEKDAYS, WEEKDAY_LABELS } from '@/entities'
+import {
+  FREQUENCIES,
+  FREQUENCY_LABELS,
+  MAX_TIMES_PER_PERIOD,
+  TIMES_PER_PERIOD_LABELS,
+  WEEKDAYS,
+  WEEKDAY_LABELS,
+} from '@/entities'
 import { useNotificationStore } from '@/stores/notification-store'
 import { useTaskStore } from '@/stores/task-store'
 import { useCategoryStore } from '@/stores/category-store'
 import { useEntityForm } from '@/composables/use-entity-form'
+import CompletionGauge from '@/components/CompletionGauge.vue'
 
 const store = useTaskStore()
 const categoryStore = useCategoryStore()
@@ -29,6 +37,9 @@ const frequency = ref<TaskFrequency>('daily')
 const weekday = ref<Weekday | ''>('')
 // '' is "Sem categoria"; converted to undefined at submit, like weekday.
 const categoryId = ref<string>('')
+// A number input hands back '' when cleared, which the use case rejects rather
+// than quietly reading as 1.
+const timesPerPeriod = ref<number | ''>(1)
 
 watch(existing, (task) => {
   if (!task) return
@@ -37,7 +48,19 @@ watch(existing, (task) => {
   frequency.value = task.frequency
   weekday.value = task.weekday ?? ''
   categoryId.value = task.categoryId ?? ''
+  timesPerPeriod.value = task.timesPerPeriod
 })
+
+// Preview of the strip the task will carry, so the number is a shape before it
+// is a habit. Only for values the gauge can actually draw.
+const previewTotal = computed(() =>
+  typeof timesPerPeriod.value === 'number' &&
+  Number.isInteger(timesPerPeriod.value) &&
+  timesPerPeriod.value > 1 &&
+  timesPerPeriod.value <= MAX_TIMES_PER_PERIOD
+    ? timesPerPeriod.value
+    : 0,
+)
 
 function handleSubmit() {
   if (notFound.value) return
@@ -53,6 +76,7 @@ function handleSubmit() {
     // the previous value instead of clearing it.
     weekday: chosenWeekday,
     categoryId: categoryId.value || undefined,
+    timesPerPeriod: timesPerPeriod.value === '' ? NaN : timesPerPeriod.value,
   }
 
   const saved = existing.value ? store.update({ ...existing.value, ...input }) : store.create(input)
@@ -108,6 +132,34 @@ function handleSubmit() {
           {{ FREQUENCY_LABELS[option] }}
         </option>
       </select>
+    </div>
+
+    <div class="form-group">
+      <label for="times">{{ TIMES_PER_PERIOD_LABELS[frequency] }}</label>
+      <input
+        id="times"
+        v-model.number="timesPerPeriod"
+        type="number"
+        inputmode="numeric"
+        min="1"
+        :max="MAX_TIMES_PER_PERIOD"
+        step="1"
+        required
+        class="max-w-[7rem]"
+      />
+      <Transition name="reveal">
+        <CompletionGauge
+          v-if="previewTotal"
+          :count="0"
+          :total="previewTotal"
+          readonly
+          class="mt-2.5"
+        />
+      </Transition>
+      <p class="hint">
+        Quantas marcacoes a tarefa precisa dentro de cada periodo. Marque cada uma tocando o
+        indicador na lista.
+      </p>
     </div>
 
     <Transition name="reveal">

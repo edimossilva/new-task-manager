@@ -25,6 +25,10 @@ export const useTaskStore = defineStore('task', () => {
     return createUseCases().isCompletedFor(task, referenceDate)
   }
 
+  function completionCountFor(task: Task, referenceDate: Date): number {
+    return createUseCases().completionCountFor(task, referenceDate)
+  }
+
   function isDueOn(task: Task, referenceDate: Date): boolean {
     return createUseCases().isDueOn(task, referenceDate)
   }
@@ -63,15 +67,33 @@ export const useTaskStore = defineStore('task', () => {
     return result.success
   }
 
-  function toggleCompletion(id: string, referenceDate: Date): boolean {
-    const result = createUseCases().toggleCompletion(id, referenceDate)
+  function advanceCompletion(id: string, referenceDate: Date): boolean {
+    const result = createUseCases().advanceCompletion(id, referenceDate)
     error.value = result.error ?? null
     if (result.success) {
       loadAll()
     } else if (result.error) {
-      // A refused toggle has no visible effect otherwise -- the box just snaps back.
+      // A refused check has no visible effect otherwise -- the dial just snaps back.
       useNotificationStore().error(result.error)
     }
+    return result.success
+  }
+
+  function setCompletionCount(id: string, count: number, referenceDate: Date): boolean {
+    const result = createUseCases().setCompletionCount(id, count, referenceDate)
+    error.value = result.error ?? null
+    if (result.success) {
+      loadAll()
+    } else if (result.error) {
+      useNotificationStore().error(result.error)
+    }
+    return result.success
+  }
+
+  function undoCompletion(id: string, referenceDate: Date): boolean {
+    const result = createUseCases().undoCompletion(id, referenceDate)
+    error.value = result.error ?? null
+    if (result.success) loadAll()
     return result.success
   }
 
@@ -81,11 +103,14 @@ export const useTaskStore = defineStore('task', () => {
     loadAll,
     getById,
     isCompletedFor,
+    completionCountFor,
     isDueOn,
     isLateOn,
     create,
     update,
     remove,
-    toggleCompletion,
+    advanceCompletion,
+    setCompletionCount,
+    undoCompletion,
   }
 })
