@@ -1,27 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
-import type { Task, TaskFrequency } from '@/entities'
-import { FREQUENCY_ORDER, formatDate } from '@/entities'
+import type { Task } from '@/entities'
+import { FREQUENCIES, FREQUENCY_LABELS, formatDate } from '@/entities'
 import { useAuthStore } from '@/stores/auth-store'
 import { useTaskStore } from '@/stores/task-store'
 import { useCategoryStore } from '@/stores/category-store'
 import { usePeriodSelection } from '@/composables/use-period-selection'
 import { buildCategoryRack } from '@/composables/use-category-rack'
 import CategoryTaskCard from '@/components/CategoryTaskCard.vue'
-
 import PeriodSelector from '@/components/PeriodSelector.vue'
-
-/**
- * The three horizons the day is read in. Weekly rides with daily: both are
- * cadences you act on this week, while a monthly or a yearly task is a landmark
- * you check in on. A band naming two frequencies keeps the row badges, which is
- * then the only thing telling its tasks apart.
- */
-const BANDS: { key: string; label: string; frequencies: TaskFrequency[] }[] = [
-  { key: 'short', label: 'Curto prazo', frequencies: ['daily', 'weekly'] },
-  { key: 'monthly', label: 'Mensal', frequencies: ['monthly'] },
-  { key: 'yearly', label: 'Anual', frequencies: ['yearly'] },
-]
 
 const authStore = useAuthStore()
 const store = useTaskStore()
@@ -37,21 +24,19 @@ function isCompleted(task: Task): boolean {
   return store.isCompletedFor(task, referenceDate.value)
 }
 
-// Only tasks actually due on the browsed date: ones created later never had a
-// chance to be done, and a weekly task pinned to a weekday has not come up yet.
+// Only ACTIVE tasks actually due on the browsed date: ones created later never
+// had a chance to be done, a weekly task pinned to a weekday has not come up
+// yet, and an inactive one is not part of the routine at all.
 const visibleTasks = computed(() =>
-  store.tasks.filter((task) => store.isDueOn(task, referenceDate.value)),
+  store.tasks.filter((task) => task.active && store.isDueOn(task, referenceDate.value)),
 )
 
-const completed = computed(() => visibleTasks.value.filter(isCompleted))
-const pending = computed(() => visibleTasks.value.filter((task) => !isCompleted(task)))
-
-// Check-level totals, alongside the task-level ratio rather than replacing it:
-// a task at 3/8 is still one task left to finish, and the meter says so.
-const hasRepeats = computed(() => visibleTasks.value.some((task) => task.timesPerPeriod > 1))
-
-const checkTally = computed(() =>
-  visibleTasks.value.reduce(
+/**
+ * Check-level totals for a set of tasks, kept alongside the task-level ratio
+ * rather than replacing it: a task at 3/8 is still one task left to finish.
+ */
+function checkTally(tasks: Task[]): { done: number; total: number } {
+  return tasks.reduce(
     (tally, task) => ({
       done:
         tally.done +
@@ -59,13 +44,8 @@ const checkTally = computed(() =>
       total: tally.total + task.timesPerPeriod,
     }),
     { done: 0, total: 0 },
-  ),
-)
-
-const progress = computed(() => {
-  if (visibleTasks.value.length === 0) return 0
-  return Math.round((completed.value.length / visibleTasks.value.length) * 100)
-})
+  )
+}
 
 /** Atrasada, then pending, then done -- the same order the tasks page defaults to. */
 function statusRank(task: Task): number {
@@ -76,38 +56,34 @@ function statusRank(task: Task): number {
 /**
  * A card holds its whole category within its band, so the sort carries what the
  * Pendentes / Concluidas split used to say: what needs attention rises, what is
- * done sinks under it.
+ * done sinks under it. No frequency term -- a band is one frequency.
  */
 const sortedTasks = computed(() =>
   [...visibleTasks.value].sort(
-    (a, b) =>
-      statusRank(a) - statusRank(b) ||
-      FREQUENCY_ORDER[a.frequency] - FREQUENCY_ORDER[b.frequency] ||
-      a.title.localeCompare(b.title),
+    (a, b) => statusRank(a) - statusRank(b) || a.title.localeCompare(b.title),
   ),
 )
 
 /**
- * Strata by horizon: Curto prazo on top, Anual at the bottom. Each band holds
- * its own rack, so a category with a daily and a monthly task appears once per
- * band -- the band is the outer axis, the category the inner. Bands with
- * nothing due are dropped rather than shown empty.
+ * One band per frequency, `FREQUENCIES` order: Diaria on top, Anual at the
+ * bottom. Each holds its own rack, so a category with a daily and a monthly
+ * task appears once per band -- the band is the outer axis, the category the
+ * inner. Bands with nothing due are dropped rather than shown empty.
  */
 const bands = computed(() =>
-  BANDS.map((band) => {
-    const tasks = sortedTasks.value.filter((task) => band.frequencies.includes(task.frequency))
-    const [first, second] = band.frequencies
+  FREQUENCIES.map((frequency) => {
+    const tasks = sortedTasks.value.filter((task) => task.frequency === frequency)
+    const done = tasks.filter(isCompleted).length
     return {
-      ...band,
-      done: tasks.filter(isCompleted).length,
+      frequency,
+      label: FREQUENCY_LABELS[frequency],
+      done,
       total: tasks.length,
-      // The rule carries the band's frequency inks, in order, then burns off.
-      ink: {
-        '--band-ink': `var(--color-freq-${first})`,
-        '--band-ink-2': `var(--color-freq-${second ?? first})`,
-      },
-      /** With one frequency in the band, the badge on every row is the band's own label. */
-      hideFrequency: band.frequencies.length === 1,
+      percent: tasks.length === 0 ? 0 : Math.round((done / tasks.length) * 100),
+      checks: checkTally(tasks),
+      hasRepeats: tasks.some((task) => task.timesPerPeriod > 1),
+      // The rule takes the frequency's own ink, then burns off.
+      ink: { '--band-ink': `var(--color-freq-${frequency})` },
       rack: buildCategoryRack(tasks, categoryStore.categories),
     }
   }).filter((band) => band.total > 0),
@@ -128,25 +104,36 @@ const firstName = computed(() => authStore.user?.displayName?.split(' ')[0] ?? '
   <template v-if="store.tasks.length">
     <PeriodSelector />
 
-    <!-- One figure, read at a glance: the ratio, drawn as a ruled meter. -->
-    <section v-if="visibleTasks.length" class="meter" aria-label="Progresso">
-      <div class="meter-head">
-        <span class="meter-figure figure">
-          {{ completed.length }}<span class="meter-slash">/</span>{{ visibleTasks.length }}
-        </span>
-        <span class="meter-pct figure">{{ progress }}%</span>
-      </div>
-      <div class="meter-track">
-        <div class="meter-fill" :style="{ width: `${progress}%` }"></div>
-      </div>
-      <div class="meter-foot">
-        <p class="meter-label">
-          {{ progress === 100 ? 'Tudo concluido' : `${pending.length} restantes` }}
+    <!--
+      A gauge cluster, one per horizon, instead of a single figure for the day:
+      four dailies left and one yearly left are not the same debt, and one bar
+      averaging them says neither. Each gauge is tinted with its own frequency
+      ink, so a glance maps it to the band below without reading the label.
+    -->
+    <section v-if="bands.length" class="gauges" aria-label="Progresso">
+      <article v-for="band in bands" :key="band.frequency" class="gauge" :style="band.ink">
+        <div class="gauge-head">
+          <span class="gauge-label">{{ band.label }}</span>
+          <span class="gauge-pct figure">{{ band.percent }}%</span>
+        </div>
+        <p class="gauge-figure figure">
+          {{ band.done }}<span class="gauge-slash">/</span>{{ band.total }}
         </p>
-        <p v-if="hasRepeats" class="meter-checks figure">
-          {{ checkTally.done }}<span class="meter-slash">/</span>{{ checkTally.total }} marcacoes
+        <div class="gauge-track">
+          <div class="gauge-fill" :style="{ width: `${band.percent}%` }"></div>
+        </div>
+        <p class="gauge-foot figure">
+          <template v-if="band.hasRepeats">
+            {{ band.checks.done }}<span class="gauge-slash">/</span>{{ band.checks.total }}
+            marcacoes
+          </template>
+          <template v-else-if="band.percent === 100">Tudo concluido</template>
+          <template v-else>
+            {{ band.total - band.done }}
+            {{ band.total - band.done === 1 ? 'restante' : 'restantes' }}
+          </template>
         </p>
-      </div>
+      </article>
     </section>
 
     <p v-if="bands.length === 0" class="section-empty">Nenhuma tarefa para este dia.</p>
@@ -156,7 +143,7 @@ const firstName = computed(() => authStore.user?.displayName?.split(' ')[0] ?? '
       so the layers are told apart before the labels are read -- and the cards
       inside keep their category inks, which is a different axis entirely.
     -->
-    <section v-for="band in bands" :key="band.key" class="band" :style="band.ink">
+    <section v-for="band in bands" :key="band.frequency" class="band" :style="band.ink">
       <div class="band-head">
         <h2 class="band-name">{{ band.label }}</h2>
         <span class="band-rule" aria-hidden="true"></span>
@@ -172,7 +159,7 @@ const firstName = computed(() => authStore.user?.displayName?.split(' ')[0] ?? '
           :tasks="unit.tasks"
           :index="index"
           compact
-          :hide-frequency="band.hideFrequency"
+          hide-frequency
         />
       </div>
     </section>
@@ -191,48 +178,51 @@ const firstName = computed(() => authStore.user?.displayName?.split(' ')[0] ?? '
   @apply font-mono text-[0.625rem] font-medium uppercase tracking-[0.16em] text-accent-text mb-1;
 }
 
-.meter {
-  @apply px-4 py-3.5 bg-panel border-2 border-fg rounded-sm;
+/* Gauges size themselves and wrap: one horizon or five, the cluster still reads. */
+.gauges {
+  @apply flex flex-wrap gap-2.5;
+}
+
+.gauge {
+  @apply flex-1 basis-[150px] px-3 py-2.5 bg-panel border border-line-strong rounded-sm;
   box-shadow: var(--panel-shadow);
 }
 
-.meter-head {
+.gauge-head {
   @apply flex items-baseline justify-between gap-2;
 }
 
-.meter-figure {
-  @apply text-[1.9rem] leading-none font-medium text-fg;
-  text-shadow: 0 0 18px var(--color-accent-dim);
+.gauge-label {
+  @apply font-mono text-[0.625rem] font-medium uppercase tracking-[0.14em] truncate;
+  color: var(--band-ink);
 }
 
-.meter-slash {
+.gauge-pct {
+  @apply shrink-0 text-[0.6875rem] text-fg-faint;
+}
+
+.gauge-figure {
+  @apply mt-1 text-[1.5rem] leading-none font-medium text-fg;
+  text-shadow: 0 0 16px color-mix(in srgb, var(--band-ink) 30%, transparent);
+}
+
+.gauge-slash {
   @apply text-fg-faint mx-0.5;
 }
 
-.meter-pct {
-  @apply text-[0.8125rem] text-fg-soft;
-}
-
-/* Hatched track so an empty meter still reads as a scale, not a void. */
-.meter-track {
-  @apply relative h-2.5 w-full mt-2.5 border border-fg overflow-hidden;
+/* Hatched track, so an empty gauge still reads as a scale rather than a void. */
+.gauge-track {
+  @apply relative h-2 w-full mt-2 border border-fg overflow-hidden;
   background-image: repeating-linear-gradient(45deg, transparent 0 3px, var(--color-line) 3px 4px);
 }
 
-.meter-fill {
-  @apply h-full bg-accent transition-[width] duration-500;
+.gauge-fill {
+  @apply h-full transition-[width] duration-500;
+  background: var(--band-ink);
 }
 
-.meter-foot {
-  @apply flex items-baseline justify-between gap-3 mt-2;
-}
-
-.meter-label {
-  @apply font-mono text-[0.625rem] font-medium uppercase tracking-[0.12em] text-fg-faint;
-}
-
-.meter-checks {
-  @apply text-[0.625rem] font-medium uppercase tracking-[0.12em] text-fg-faint;
+.gauge-foot {
+  @apply mt-1.5 text-[0.625rem] font-medium uppercase tracking-[0.1em] text-fg-faint truncate;
 }
 
 .band {
@@ -248,10 +238,10 @@ const firstName = computed(() => authStore.user?.displayName?.split(' ')[0] ?? '
   color: var(--band-ink);
 }
 
-/* The stratum line: it runs through the band's frequency inks, then burns off. */
+/* The stratum line: it starts at the frequency's own ink and burns off. */
 .band-rule {
   @apply flex-1 h-px;
-  background: linear-gradient(90deg, var(--band-ink), var(--band-ink-2) 30%, transparent);
+  background: linear-gradient(90deg, var(--band-ink), transparent);
 }
 
 .band-count {

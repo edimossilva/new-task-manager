@@ -16,6 +16,12 @@ defineProps<{ frequency: TaskFrequency }>()
   @apply inline-block px-1.5 py-0.5 font-mono text-[0.625rem] font-medium uppercase
          tracking-[0.1em] leading-[1.5] whitespace-nowrap border rounded-[2px];
 }
+/* No hue for the one-off: it is the absence of a cadence, and reads as one. */
+.badge.once {
+  color: var(--color-freq-once);
+  border-color: var(--color-line-strong);
+  background: transparent;
+}
 .badge.daily {
   color: var(--color-freq-daily);
   border-color: var(--color-freq-daily);

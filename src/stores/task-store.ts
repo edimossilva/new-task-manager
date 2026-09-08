@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import type { CreateTaskInput, Task } from '@/entities'
+import type { CompletionPeriod } from '@/usecases'
 import { TaskUseCases } from '@/usecases'
 import { getTaskRepository } from '@/adapters/repositories'
 import { useNotificationStore } from './notification-store'
@@ -29,6 +30,10 @@ export const useTaskStore = defineStore('task', () => {
     return createUseCases().completionCountFor(task, referenceDate)
   }
 
+  function completionHistory(task: Task): CompletionPeriod[] {
+    return createUseCases().completionHistory(task)
+  }
+
   function isDueOn(task: Task, referenceDate: Date): boolean {
     return createUseCases().isDueOn(task, referenceDate)
   }
@@ -53,6 +58,16 @@ export const useTaskStore = defineStore('task', () => {
     if (result.success) {
       loadAll()
       useNotificationStore().success('Tarefa atualizada com sucesso.')
+    }
+    return result.success
+  }
+
+  function setActive(id: string, active: boolean): boolean {
+    const result = createUseCases().setActive(id, active)
+    error.value = result.error ?? null
+    if (result.success) {
+      loadAll()
+      useNotificationStore().success(active ? 'Tarefa ativada.' : 'Tarefa desativada.')
     }
     return result.success
   }
@@ -104,10 +119,12 @@ export const useTaskStore = defineStore('task', () => {
     getById,
     isCompletedFor,
     completionCountFor,
+    completionHistory,
     isDueOn,
     isLateOn,
     create,
     update,
+    setActive,
     remove,
     advanceCompletion,
     setCompletionCount,

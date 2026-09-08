@@ -70,8 +70,8 @@ const filteredTasks = computed(() =>
 
 /** The latest completion key written under the task's CURRENT frequency. */
 function lastCompletionKey(task: Task): string {
-  const own = task.completions.filter((key) => matchesFrequency(task.frequency, key))
-  return own[own.length - 1] ?? ''
+  const own = task.completions.filter((entry) => matchesFrequency(task.frequency, entry.key))
+  return own[own.length - 1]?.key ?? ''
 }
 
 // Sorting orders the rows INSIDE every card, so there is no key for category:

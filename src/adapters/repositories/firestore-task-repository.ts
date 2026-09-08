@@ -1,5 +1,5 @@
 import { Timestamp, type DocumentData, type Firestore } from 'firebase/firestore'
-import type { Task, TaskFrequency, Weekday } from '@/entities'
+import type { Completion, Task, TaskFrequency, Weekday } from '@/entities'
 import { normalizeTimesPerPeriod } from '@/entities'
 import type { TaskRepository } from '@/usecases/ports'
 import { FirestoreRepository } from './firestore-repository'
@@ -13,7 +13,11 @@ function serialize(task: Task): DocumentData {
     categoryId: task.categoryId ?? null,
     weekday: task.weekday ?? null,
     timesPerPeriod: task.timesPerPeriod,
-    completions: task.completions,
+    active: task.active,
+    completions: task.completions.map((completion) => ({
+      key: completion.key,
+      at: completion.at ? Timestamp.fromDate(completion.at) : null,
+    })),
     createdAt: Timestamp.fromDate(task.createdAt),
     updatedAt: Timestamp.fromDate(task.updatedAt),
   }
@@ -30,6 +34,22 @@ function toWeekday(value: unknown): Weekday | undefined {
   return value as Weekday
 }
 
+/**
+ * Reads both shapes. Before check-offs carried a moment, a completion WAS its
+ * period key -- those documents are still out there and still correct, they just
+ * cannot say when. Anything unrecognisable is dropped rather than counted.
+ */
+function toCompletions(value: unknown): Completion[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((entry): Completion[] => {
+    if (typeof entry === 'string') return [{ key: entry }]
+    if (!entry || typeof entry !== 'object') return []
+    const { key, at } = entry as { key?: unknown; at?: unknown }
+    if (typeof key !== 'string') return []
+    return [{ key, at: at instanceof Timestamp ? at.toDate() : undefined }]
+  })
+}
+
 function deserialize(data: DocumentData): Task {
   return {
     id: data.id as string,
@@ -41,7 +61,10 @@ function deserialize(data: DocumentData): Task {
     // Missing on every task written before the feature, and the normalizer
     // turns that absence into the 1 those tasks have always meant.
     timesPerPeriod: normalizeTimesPerPeriod(data.timesPerPeriod),
-    completions: (data.completions as string[] | undefined) ?? [],
+    // Only an explicit `false` deactivates: every task written before the flag
+    // existed was part of the routine, and a missing field must not hide it.
+    active: data.active !== false,
+    completions: toCompletions(data.completions),
     createdAt: (data.createdAt as Timestamp).toDate(),
     updatedAt: (data.updatedAt as Timestamp).toDate(),
   }

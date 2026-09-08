@@ -1,4 +1,4 @@
-import type { CreateTaskInput, Task } from '@/entities'
+import type { Completion, CreateTaskInput, Task } from '@/entities'
 import { createTask, isoWeekday, periodKey } from '@/entities'
 import type { TaskRepository } from './ports'
 import { validateRequiredText, validateTimesPerPeriod } from './validation'
@@ -8,12 +8,25 @@ export interface UseCaseResult {
   error?: string
 }
 
+/** One period's worth of check-offs, as `completionHistory` reports it. */
+export interface CompletionPeriod {
+  key: string
+  entries: Completion[]
+  /** Epoch ms of the newest recorded moment, or 0 when none of them carry one. */
+  latest: number
+}
+
+/** Entries sort by period key only, so the order inside a period stays as recorded. */
+function byKey(a: Completion, b: Completion): number {
+  return a.key < b.key ? -1 : a.key > b.key ? 1 : 0
+}
+
 /**
- * Retention cap for `completions`: ten years of once-a-day check-offs. At ~11
- * bytes a key that is ~40 KB, comfortably inside Firestore's 1 MiB per-document
- * limit, and it keeps retention from being something the UI has to be tuned
- * around. A task checked several times a day spends the budget proportionally
- * faster -- eight a day still buys well over a year of history.
+ * Retention cap for `completions`: ten years of once-a-day check-offs. At a key
+ * plus a timestamp per entry that is a few hundred KB, inside Firestore's 1 MiB
+ * per-document limit, and it keeps retention from being something the UI has to
+ * be tuned around. A task checked several times a day spends the budget
+ * proportionally faster -- eight a day still buys well over a year of history.
  */
 const MAX_COMPLETIONS = 3650
 
@@ -65,6 +78,20 @@ export class TaskUseCases {
     return { success: true }
   }
 
+  /**
+   * Takes a task in or out of the routine. Deliberately NOT part of `isDueOn`:
+   * the tasks page has to keep listing an inactive task, or there would be no
+   * way back from the state -- only the home page filters on it.
+   */
+  setActive(id: string, active: boolean): UseCaseResult {
+    const task = this.taskRepo.getById(id)
+    if (!task) return { success: false, error: 'Tarefa nao encontrada.' }
+    if (task.active === active) return { success: true }
+
+    this.taskRepo.update({ ...task, active, updatedAt: new Date() })
+    return { success: true }
+  }
+
   delete(id: string): UseCaseResult {
     if (!this.taskRepo.getById(id)) return { success: false, error: 'Tarefa nao encontrada.' }
     this.taskRepo.delete(id)
@@ -78,7 +105,7 @@ export class TaskUseCases {
    */
   completionCountFor(task: Task, referenceDate: Date = new Date()): number {
     const key = periodKey(task.frequency, referenceDate)
-    return task.completions.filter((completion) => completion === key).length
+    return task.completions.filter((completion) => completion.key === key).length
   }
 
   /**
@@ -191,12 +218,48 @@ export class TaskUseCases {
    * chronological. `count` is bounded by MAX_TIMES_PER_PERIOD, far below the cap,
    * so the slice length can never reach zero and swallow the prune.
    */
-  private withCount(completions: string[], key: string, count: number): string[] {
+  private withCount(completions: Completion[], key: string, count: number): Completion[] {
+    // Kept entries keep their original moment; only the surplus is new. Slicing
+    // from the FRONT is what makes undo take back the most recent check rather
+    // than the first one, which would rewrite history the user can see.
+    const mine = completions.filter((completion) => completion.key === key).slice(0, count)
+    const now = new Date()
+    while (mine.length < count) mine.push({ key, at: now })
+
     const others = completions
-      .filter((completion) => completion !== key)
-      .sort()
+      .filter((completion) => completion.key !== key)
+      .sort(byKey)
       .slice(-(MAX_COMPLETIONS - count))
-    return [...others, ...Array<string>(count).fill(key)].sort()
+
+    // A stable sort by key alone, so entries within one period keep the order
+    // they were recorded in -- which is chronological.
+    return [...others, ...mine].sort(byKey)
+  }
+
+  /**
+   * The task's check-offs grouped into the periods they belong to, most recent
+   * first. Grouping lives here rather than in the view because "which period is
+   * this check-off part of" is the completion model's own question.
+   *
+   * Periods are ordered by their latest recorded moment, falling back to the key:
+   * a frequency change leaves keys of several formats behind, and those do not
+   * sort chronologically against each other.
+   */
+  completionHistory(task: Task): CompletionPeriod[] {
+    const periods = new Map<string, Completion[]>()
+    for (const completion of task.completions) {
+      const entries = periods.get(completion.key)
+      if (entries) entries.push(completion)
+      else periods.set(completion.key, [completion])
+    }
+
+    return [...periods]
+      .map(([key, entries]) => ({
+        key,
+        entries,
+        latest: Math.max(0, ...entries.map((entry) => entry.at?.getTime() ?? 0)),
+      }))
+      .sort((a, b) => b.latest - a.latest || (a.key < b.key ? 1 : a.key > b.key ? -1 : 0))
   }
 
   /**
@@ -206,6 +269,12 @@ export class TaskUseCases {
    * as not done, counting work that was impossible against that period.
    */
   existsIn(task: Task, referenceDate: Date = new Date()): boolean {
+    // A one-off's key carries no date, so it cannot answer "did this exist yet".
+    // Its existence is a plain calendar comparison instead; without this, a task
+    // created today would show up while browsing last month.
+    if (task.frequency === 'once') {
+      return periodKey('daily', task.createdAt) <= periodKey('daily', referenceDate)
+    }
     return periodKey(task.frequency, task.createdAt) <= periodKey(task.frequency, referenceDate)
   }
 
@@ -254,10 +323,11 @@ export class TaskUseCases {
     return true
   }
 
-  /** Tasks due in the period containing `referenceDate` and still open. */
+  /** Active tasks due in the period containing `referenceDate` and still open. */
   pendingFor(referenceDate: Date = new Date()): Task[] {
     return this.taskRepo
       .getAll()
+      .filter((task) => task.active)
       .filter((task) => this.isDueOn(task, referenceDate))
       .filter((task) => !this.isCompletedFor(task, referenceDate))
   }

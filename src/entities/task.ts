@@ -1,4 +1,9 @@
-export type TaskFrequency = 'daily' | 'weekly' | 'monthly' | 'yearly'
+/**
+ * `once` is the odd one out: a task with no cadence, done a single time. It
+ * still rides the completion model, with a period key that never changes, so
+ * "done" is permanent instead of re-arming when a period turns over.
+ */
+export type TaskFrequency = 'once' | 'daily' | 'weekly' | 'monthly' | 'yearly'
 
 /**
  * ISO-8601 weekday, Monday = 1 through Sunday = 7.
@@ -25,6 +30,18 @@ export function normalizeTimesPerPeriod(value: unknown): number {
   return Math.min(value, MAX_TIMES_PER_PERIOD)
 }
 
+/**
+ * One check-off. The key says WHICH period it belongs to, `at` says WHEN the
+ * box was actually ticked -- the two are different questions, and a yearly task
+ * ticked four times in 2026 answers the first identically four times over.
+ */
+export interface Completion {
+  /** Period key from `periodKey(frequency, date)`. */
+  key: string
+  /** Absent on check-offs written before the moment was recorded. */
+  at?: Date
+}
+
 export interface Task {
   id: string
   title: string
@@ -40,14 +57,20 @@ export interface Task {
    */
   timesPerPeriod: number
   /**
-   * Period keys already completed, ascending. e.g. ['2026-08-31', '2026-09-01']
-   *
-   * A key REPEATS once per check-off, so a task needing three a day reads
-   * ['2026-09-01', '2026-09-01', '2026-09-01'] once done. Counting occurrences
-   * rather than storing a tally keeps rollover derived: nothing has to be reset
-   * when the period turns over.
+   * Off means "not part of the routine right now": the task keeps its history
+   * and stays on the tasks page, but the home page never shows it. Absent on
+   * documents written before the flag, which read as active.
    */
-  completions: string[]
+  active: boolean
+  /**
+   * Check-offs, ascending by period key.
+   *
+   * A key REPEATS once per check-off, so a task needing three a day holds three
+   * entries for that day once done. Counting occurrences rather than storing a
+   * tally keeps rollover derived: nothing has to be reset when the period turns
+   * over, and each entry keeps its own `at` so the history stays readable.
+   */
+  completions: Completion[]
   createdAt: Date
   updatedAt: Date
 }
@@ -71,6 +94,7 @@ export function createTask(input: CreateTaskInput): Task {
     categoryId: input.categoryId,
     weekday: input.weekday,
     timesPerPeriod: normalizeTimesPerPeriod(input.timesPerPeriod),
+    active: true,
     completions: [],
     createdAt: now,
     updatedAt: now,

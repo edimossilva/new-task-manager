@@ -5,15 +5,18 @@ import type { TaskFrequency, Weekday } from './task'
  * alphabetically (Anual, Diaria, Mensal, Semanal), which reads as noise.
  */
 export const FREQUENCY_ORDER: Record<TaskFrequency, number> = {
-  daily: 0,
-  weekly: 1,
-  monthly: 2,
-  yearly: 3,
+  once: 0,
+  daily: 1,
+  weekly: 2,
+  monthly: 3,
+  yearly: 4,
 }
 
-export const FREQUENCIES: TaskFrequency[] = ['daily', 'weekly', 'monthly', 'yearly']
+/** One-offs lead: a task with no cadence is the one thing today that will not come back. */
+export const FREQUENCIES: TaskFrequency[] = ['once', 'daily', 'weekly', 'monthly', 'yearly']
 
 export const FREQUENCY_LABELS: Record<TaskFrequency, string> = {
+  once: 'Unica',
   daily: 'Diaria',
   weekly: 'Semanal',
   monthly: 'Mensal',
@@ -25,6 +28,7 @@ export const FREQUENCY_LABELS: Record<TaskFrequency, string> = {
  * 'Vezes por periodo' is technically right and reads like a form nobody wrote.
  */
 export const TIMES_PER_PERIOD_LABELS: Record<TaskFrequency, string> = {
+  once: 'Vezes no total',
   daily: 'Vezes por dia',
   weekly: 'Vezes por semana',
   monthly: 'Vezes por mes',
@@ -48,6 +52,7 @@ export const MONTH_NAMES = [
 ]
 
 const CURRENT_PERIOD_LABELS: Record<TaskFrequency, string> = {
+  once: 'Concluida',
   daily: 'Hoje',
   weekly: 'Esta semana',
   monthly: 'Este mes',
@@ -119,6 +124,10 @@ export function isoWeekKey(date: Date): string {
  */
 export function periodKey(frequency: TaskFrequency, date: Date = new Date()): string {
   switch (frequency) {
+    // No period, so no date in the key: a one-off checked off stays checked off,
+    // which is the whole difference between it and a daily.
+    case 'once':
+      return 'once'
     case 'daily':
       return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
     case 'weekly':
@@ -155,6 +164,7 @@ export function isSameDay(a: Date, b: Date): boolean {
 }
 
 const KEY_PATTERNS: Record<TaskFrequency, RegExp> = {
+  once: /^once$/,
   daily: /^\d{4}-\d{2}-\d{2}$/,
   weekly: /^\d{4}-W\d{2}$/,
   monthly: /^\d{4}-\d{2}$/,
@@ -176,4 +186,9 @@ export function matchesFrequency(frequency: TaskFrequency, key: string): boolean
 /** dd/mm/yyyy, the format the period selector shows. */
 export function formatDate(date: Date): string {
   return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()}`
+}
+
+/** dd/mm/yyyy HH:MM, for a check-off's own moment. Local, like every other reading. */
+export function formatDateTime(date: Date): string {
+  return `${formatDate(date)} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }

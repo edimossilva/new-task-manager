@@ -53,7 +53,7 @@ export const THEMES: Record<ThemeName, Theme> = {
 
 export const THEME_NAMES = Object.keys(THEMES) as ThemeName[]
 
-export const DEFAULT_THEME: ThemeName = 'holo'
+export const DEFAULT_THEME: ThemeName = 'alloy'
 
 export function isThemeName(value: unknown): value is ThemeName {
   return typeof value === 'string' && value in THEMES

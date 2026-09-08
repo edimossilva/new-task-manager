@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import type { Task, TaskFrequency, Weekday } from '@/entities'
 import {
   FREQUENCIES,
@@ -20,8 +20,19 @@ const store = useTaskStore()
 const categoryStore = useCategoryStore()
 const notifications = useNotificationStore()
 const router = useRouter()
+const route = useRoute()
 
-onMounted(() => categoryStore.loadAll())
+onMounted(() => {
+  categoryStore.loadAll()
+
+  // `?category=` is how a category card's + key opens this form. Checked against
+  // the loaded categories, since a select whose value matches no <option>
+  // renders blank -- and only for a new task, so it can never overwrite what an
+  // edited one already points at.
+  const preset = route.query.category
+  if (isEditMode.value || typeof preset !== 'string') return
+  if (categoryStore.byId.has(preset)) categoryId.value = preset
+})
 
 const { isEditMode, existing } = useEntityForm<Task>((id) => store.getById(id))
 

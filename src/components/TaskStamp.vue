@@ -6,7 +6,16 @@ import { FREQUENCY_LABELS } from '@/entities'
 /** 2 * pi * 13, the radius the dial is drawn at. */
 const CIRCUMFERENCE = 81.7
 
-const props = defineProps<{ task: Task; count: number; periodLabel: string }>()
+const props = withDefaults(
+  defineProps<{
+    task: Task
+    count: number
+    periodLabel: string
+    /** An inactive task is not part of the routine, so its dial does not turn. */
+    disabled?: boolean
+  }>(),
+  { disabled: false },
+)
 defineEmits<{ advance: [] }>()
 
 const total = computed(() => props.task.timesPerPeriod)
@@ -39,6 +48,7 @@ const checkedState = computed(() =>
     type="button"
     role="checkbox"
     class="lock"
+    :disabled="disabled"
     :aria-checked="checkedState"
     :aria-label="label"
     @click="$emit('advance')"
@@ -69,11 +79,15 @@ const checkedState = computed(() =>
          transition-[background,box-shadow] duration-[200ms];
 }
 
-.lock:hover .ring {
+.lock:disabled {
+  @apply opacity-40 cursor-default;
+}
+
+.lock:not(:disabled):hover .ring {
   background: var(--color-accent-dim);
 }
 
-.lock:active .ring {
+.lock:not(:disabled):active .ring {
   @apply scale-90;
 }
 

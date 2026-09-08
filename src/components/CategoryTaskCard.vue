@@ -66,8 +66,17 @@ function countOf(task: Task): number {
   return store.completionCountFor(task, referenceDate.value)
 }
 
-const doneCount = computed(() => props.tasks.filter(isCompleted).length)
-const progress = computed(() => (doneCount.value / props.tasks.length) * 100)
+/*
+ * The head's ratio is a reading of the WORK, so it counts active tasks only. A
+ * card holding nothing but inactive ones has no ratio to give and falls back to
+ * a plain count, the same figure the compact head shows.
+ */
+const activeTasks = computed(() => props.tasks.filter((task) => task.active))
+const doneCount = computed(() => activeTasks.value.filter(isCompleted).length)
+const hasRatio = computed(() => activeTasks.value.length > 0)
+const progress = computed(() =>
+  activeTasks.value.length === 0 ? 0 : (doneCount.value / activeTasks.value.length) * 100,
+)
 
 /**
  * The latest completion written under the task's CURRENT frequency.
@@ -77,8 +86,8 @@ const progress = computed(() => (doneCount.value / props.tasks.length) * 100)
  * key -- so the raw last element can be a stale key from the old format.
  */
 function lastCompletion(task: Task): string {
-  const own = task.completions.filter((key) => matchesFrequency(task.frequency, key))
-  const key = own[own.length - 1]
+  const own = task.completions.filter((entry) => matchesFrequency(task.frequency, entry.key))
+  const key = own[own.length - 1]?.key
   // Empty rather than a dash: a row that has never been ticked should say
   // nothing there, not print a placeholder in every card on the page.
   if (!key) return ''
@@ -103,27 +112,56 @@ function lastCompletion(task: Task): string {
       <h2 class="unit-name ink-text" :title="category?.description || undefined">
         {{ category?.name ?? 'Sem categoria' }}
       </h2>
-      <span class="unit-count figure">
-        {{ doneCount }}<span class="unit-slash">/</span>{{ tasks.length }}
+      <span v-if="hasRatio" class="unit-count figure">
+        {{ doneCount }}<span class="unit-slash">/</span>{{ activeTasks.length }}
         <span class="sr-only">concluidas</span>
       </span>
+      <span v-else class="unit-count figure">
+        {{ tasks.length }}
+        <span class="sr-only">{{ tasks.length === 1 ? 'tarefa' : 'tarefas' }}</span>
+      </span>
+      <!--
+        The new-task key sits in the head, where the category is already named,
+        so the form opens with this one chosen. On the unfiled unit it opens
+        with none, which is exactly what that unit collects.
+      -->
+      <RouterLink
+        v-if="!compact"
+        class="unit-add"
+        :to="category ? { path: '/tasks/new', query: { category: category.id } } : '/tasks/new'"
+        :aria-label="`Nova tarefa em ${category?.name ?? 'Sem categoria'}`"
+        :title="`Nova tarefa em ${category?.name ?? 'Sem categoria'}`"
+      >
+        +
+      </RouterLink>
     </header>
 
-    <div class="unit-track" :aria-hidden="true">
+    <div v-if="hasRatio" class="unit-track" :aria-hidden="true">
       <div class="unit-fill" :style="{ width: `${progress}%` }"></div>
     </div>
 
     <TransitionGroup tag="ul" name="task" class="unit-list">
-      <li v-for="task in tasks" :key="task.id" class="task">
+      <li v-for="task in tasks" :key="task.id" class="task" :class="{ off: !task.active }">
         <TaskStamp
           :task="task"
           :count="countOf(task)"
           :period-label="formatDate(referenceDate)"
+          :disabled="!task.active"
           @advance="store.advanceCompletion(task.id, referenceDate)"
         />
 
         <div class="task-body">
-          <p class="task-title" :class="{ struck: isCompleted(task) }">{{ task.title }}</p>
+          <!--
+            The title is the way into the task's own page, where its history is.
+            A third action link per row would have cost more width than the row
+            has; the title was already the thing being pointed at.
+          -->
+          <p class="task-title" :class="{ struck: isCompleted(task) }">
+            <RouterLink v-if="!compact" :to="`/tasks/${task.id}`" class="task-link">
+              {{ task.title }}
+            </RouterLink>
+            <template v-else>{{ task.title }}</template>
+          </p>
           <p v-if="task.description && !compact" class="task-desc">{{ task.description }}</p>
 
           <CompletionGauge
@@ -145,16 +183,76 @@ function lastCompletion(task: Task): string {
             <div class="task-tags">
               <FrequencyBadge v-if="!hideFrequency" :frequency="task.frequency" />
               <WeekdayBadge v-if="task.weekday" :weekday="task.weekday" />
-              <span v-if="isLate(task)" class="task-late">Atrasada</span>
+              <span v-if="!task.active" class="task-off">Inativa</span>
+              <span v-else-if="isLate(task)" class="task-late">Atrasada</span>
               <span v-if="!compact && lastCompletion(task)" class="task-meta figure">
                 {{ lastCompletion(task) }}
               </span>
             </div>
 
             <div v-if="!compact" class="task-actions">
-              <RouterLink :to="`/tasks/${task.id}/edit`" class="btn-link">Editar</RouterLink>
-              <button type="button" class="btn-link danger" @click="$emit('delete', task.id)">
-                Excluir
+              <!--
+                Icons, not words: three labelled links would have cost more
+                width than a row has three-across, and these three actions are
+                the same three on every row -- there is nothing to read twice.
+              -->
+              <!--
+                Power, not a checkbox: taking a task out of the routine is a
+                state the row wears, and the same key puts it back.
+              -->
+              <button
+                type="button"
+                class="task-action"
+                :class="{ lit: !task.active }"
+                :aria-pressed="!task.active"
+                :aria-label="`${task.active ? 'Desativar' : 'Ativar'} ${task.title}`"
+                :title="task.active ? 'Desativar' : 'Ativar'"
+                @click="store.setActive(task.id, !task.active)"
+              >
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M8 2.3v4.5" />
+                  <path d="M4.9 4.5a5 5 0 1 0 6.2 0" />
+                </svg>
+              </button>
+
+              <RouterLink
+                :to="`/tasks/${task.id}`"
+                class="task-action"
+                :aria-label="`Detalhes de ${task.title}`"
+                title="Detalhes e historico"
+              >
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <circle cx="8" cy="8" r="6.25" />
+                  <path d="M8 7.4v4.1" />
+                  <circle class="solid" cx="8" cy="4.7" r="0.9" />
+                </svg>
+              </RouterLink>
+
+              <RouterLink
+                :to="`/tasks/${task.id}/edit`"
+                class="task-action"
+                :aria-label="`Editar ${task.title}`"
+                title="Editar"
+              >
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M10.9 2.6 13.4 5.1 5.7 12.8 2.6 13.4 3.2 10.3z" />
+                  <path d="M9.5 4 12 6.5" />
+                </svg>
+              </RouterLink>
+
+              <button
+                type="button"
+                class="task-action danger"
+                :aria-label="`Excluir ${task.title}`"
+                title="Excluir"
+                @click="$emit('delete', task.id)"
+              >
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M2.8 4.3h10.4" />
+                  <path d="M4.4 4.3 5.1 13.2h5.8l.7-8.9" />
+                  <path d="M6.2 4.3V2.8h3.6v1.5" />
+                  <path d="M6.7 6.6v4.3M9.3 6.6v4.3" />
+                </svg>
               </button>
             </div>
           </div>
@@ -221,6 +319,23 @@ function lastCompletion(task: Task): string {
   @apply shrink-0 text-[0.8125rem] text-fg-soft;
 }
 
+.unit-add {
+  @apply flex items-center justify-center w-7 h-7 shrink-0 -my-1 font-mono text-[1rem]
+         leading-none text-fg-faint bg-well border border-line-strong no-underline
+         transition-[color,border-color] duration-[140ms];
+  border-radius: 2px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.unit-add:hover {
+  @apply text-accent-text border-accent-text;
+}
+
+.unit-add:focus-visible {
+  @apply outline-none border-accent;
+  box-shadow: 0 0 0 3px var(--color-accent-dim);
+}
+
 .unit-slash {
   @apply text-fg-faint mx-px;
 }
@@ -269,6 +384,22 @@ function lastCompletion(task: Task): string {
   @apply text-[0.9375rem] leading-snug font-medium text-fg break-words;
 }
 
+.task-link {
+  @apply text-fg no-underline transition-colors duration-[140ms];
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 3px;
+}
+
+.task-link:hover {
+  @apply text-accent-text;
+  text-decoration-color: currentColor;
+}
+
+.task-title.struck .task-link {
+  @apply text-fg-faint;
+}
+
 .task-title.struck {
   @apply text-fg-faint line-through decoration-[1.5px];
   text-decoration-color: var(--color-done);
@@ -286,6 +417,21 @@ function lastCompletion(task: Task): string {
   @apply flex flex-wrap items-center gap-1.5;
 }
 
+/* Out of the routine: legible, but visibly not part of today's reading. */
+.task.off .task-title,
+.task.off .task-desc {
+  @apply text-fg-faint;
+}
+
+.task-off {
+  @apply font-mono text-[0.625rem] font-medium uppercase tracking-[0.1em]
+         text-fg-faint bg-well border border-line-strong px-1.5 py-0.5 rounded-[2px];
+}
+
+.task-action.lit {
+  @apply text-accent-text;
+}
+
 .task-late {
   @apply font-mono text-[0.625rem] font-medium uppercase tracking-[0.1em]
          text-void bg-accent-text px-1.5 py-0.5 rounded-[2px];
@@ -296,7 +442,39 @@ function lastCompletion(task: Task): string {
 }
 
 .task-actions {
-  @apply flex items-center shrink-0 ml-auto -mr-2 -my-1;
+  @apply flex items-center shrink-0 ml-auto -mr-1.5 -my-1;
+}
+
+/* One control shape for the row's three actions: a 44px-tall target that shows
+   as a 17px glyph, so the row reads as content with affordances, not a toolbar. */
+.task-action {
+  @apply inline-flex items-center justify-center w-8 min-h-11 shrink-0 bg-transparent
+         border-none cursor-pointer text-fg-faint transition-colors duration-[140ms];
+  -webkit-tap-highlight-color: transparent;
+}
+
+.task-action svg {
+  @apply w-[17px] h-[17px];
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.task-action svg .solid {
+  fill: currentColor;
+  stroke: none;
+}
+
+.task-action:hover,
+.task-action:focus-visible {
+  @apply outline-none text-accent-text;
+}
+
+.task-action.danger:hover,
+.task-action.danger:focus-visible {
+  color: var(--color-alarm);
 }
 
 /* A unit arriving: it slides up out of the rail rather than fading in place. */
