@@ -31,22 +31,6 @@ const visibleTasks = computed(() =>
   store.tasks.filter((task) => task.active && store.isDueOn(task, referenceDate.value)),
 )
 
-/**
- * Check-level totals for a set of tasks, kept alongside the task-level ratio
- * rather than replacing it: a task at 3/8 is still one task left to finish.
- */
-function checkTally(tasks: Task[]): { done: number; total: number } {
-  return tasks.reduce(
-    (tally, task) => ({
-      done:
-        tally.done +
-        Math.min(store.completionCountFor(task, referenceDate.value), task.timesPerPeriod),
-      total: tally.total + task.timesPerPeriod,
-    }),
-    { done: 0, total: 0 },
-  )
-}
-
 /** Atrasada, then pending, then done -- the same order the tasks page defaults to. */
 function statusRank(task: Task): number {
   if (isCompleted(task)) return 2
@@ -73,20 +57,32 @@ const sortedTasks = computed(() =>
 const bands = computed(() =>
   FREQUENCIES.map((frequency) => {
     const tasks = sortedTasks.value.filter((task) => task.frequency === frequency)
-    const done = tasks.filter(isCompleted).length
+    // The reading is check-level: a task wanting eight check-offs is eight
+    // notches on the scale, so the third one moves the needle instead of the
+    // band sitting at zero until the whole task lands. At timesPerPeriod 1 this
+    // is the task count it always was.
+    const checks = store.checkTally(tasks, referenceDate.value)
     return {
       frequency,
       label: FREQUENCY_LABELS[frequency],
-      done,
-      total: tasks.length,
-      percent: tasks.length === 0 ? 0 : Math.round((done / tasks.length) * 100),
-      checks: checkTally(tasks),
+      done: checks.done,
+      total: checks.total,
+      // Rounded for display, but never up to 100 while a check is still open.
+      percent:
+        checks.total === 0
+          ? 0
+          : checks.done >= checks.total
+            ? 100
+            : Math.min(Math.round((checks.done / checks.total) * 100), 99),
+      // Whole tasks, the other reading: eight of eight checks on one task and
+      // one of eight on eight tasks are the same percentage and not the same day.
+      tasks: { done: tasks.filter(isCompleted).length, total: tasks.length },
       hasRepeats: tasks.some((task) => task.timesPerPeriod > 1),
       // The rule takes the frequency's own ink, then burns off.
       ink: { '--band-ink': `var(--color-freq-${frequency})` },
       rack: buildCategoryRack(tasks, categoryStore.categories),
     }
-  }).filter((band) => band.total > 0),
+  }).filter((band) => band.tasks.total > 0),
 )
 
 const firstName = computed(() => authStore.user?.displayName?.split(' ')[0] ?? '')
@@ -108,7 +104,8 @@ const firstName = computed(() => authStore.user?.displayName?.split(' ')[0] ?? '
       A gauge cluster, one per horizon, instead of a single figure for the day:
       four dailies left and one yearly left are not the same debt, and one bar
       averaging them says neither. Each gauge is tinted with its own frequency
-      ink, so a glance maps it to the band below without reading the label.
+      ink, so a glance maps it to the band below without reading the label. The
+      scale counts CHECK-OFFS, so partial progress on a repeating task shows.
     -->
     <section v-if="bands.length" class="gauges" aria-label="Progresso">
       <article v-for="band in bands" :key="band.frequency" class="gauge" :style="band.ink">
@@ -122,12 +119,15 @@ const firstName = computed(() => authStore.user?.displayName?.split(' ')[0] ?? '
         <div class="gauge-track">
           <div class="gauge-fill" :style="{ width: `${band.percent}%` }"></div>
         </div>
+        <!--
+          The foot is the task-level figure, kept because the two answer
+          different questions: half the checks done can still be every task open.
+        -->
         <p class="gauge-foot figure">
-          <template v-if="band.hasRepeats">
-            {{ band.checks.done }}<span class="gauge-slash">/</span>{{ band.checks.total }}
-            marcacoes
+          <template v-if="band.done >= band.total">Tudo concluido</template>
+          <template v-else-if="band.hasRepeats">
+            {{ band.tasks.done }}<span class="gauge-slash">/</span>{{ band.tasks.total }} tarefas
           </template>
-          <template v-else-if="band.percent === 100">Tudo concluido</template>
           <template v-else>
             {{ band.total - band.done }}
             {{ band.total - band.done === 1 ? 'restante' : 'restantes' }}
@@ -147,6 +147,7 @@ const firstName = computed(() => authStore.user?.displayName?.split(' ')[0] ?? '
       <div class="band-head">
         <h2 class="band-name">{{ band.label }}</h2>
         <span class="band-rule" aria-hidden="true"></span>
+        <!-- Check-offs, the same scale as the band's own gauge above. -->
         <span class="band-count figure">
           {{ band.done }}<span class="band-slash">/</span>{{ band.total }}
         </span>

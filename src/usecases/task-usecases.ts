@@ -8,6 +8,12 @@ export interface UseCaseResult {
   error?: string
 }
 
+/** Check-level progress over a set of tasks, as `checkTally` reports it. */
+export interface CheckTally {
+  done: number
+  total: number
+}
+
 /** One period's worth of check-offs, as `completionHistory` reports it. */
 export interface CompletionPeriod {
   key: string
@@ -116,6 +122,28 @@ export class TaskUseCases {
    */
   isCompletedFor(task: Task, referenceDate: Date = new Date()): boolean {
     return this.completionCountFor(task, referenceDate) >= task.timesPerPeriod
+  }
+
+  /**
+   * Check-level progress across a set of tasks for the period containing
+   * `referenceDate`: every required check-off counts on its own, so a task at
+   * three of eight contributes three rather than nothing until it is finished.
+   * This is what the meters read, and it is the model's own question -- both
+   * list pages ask it, and a tally computed twice is a tally that can drift.
+   *
+   * Done is clamped per task: lowering `timesPerPeriod` can leave more
+   * check-offs recorded than the target asks for, and an over-full task must not
+   * lend credit to the ones beside it.
+   */
+  checkTally(tasks: Task[], referenceDate: Date = new Date()): CheckTally {
+    return tasks.reduce<CheckTally>(
+      (tally, task) => ({
+        done:
+          tally.done + Math.min(this.completionCountFor(task, referenceDate), task.timesPerPeriod),
+        total: tally.total + task.timesPerPeriod,
+      }),
+      { done: 0, total: 0 },
+    )
   }
 
   /**

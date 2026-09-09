@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import type { CreateTaskInput, Task } from '@/entities'
-import type { CompletionPeriod } from '@/usecases'
+import type { CheckTally, CompletionPeriod } from '@/usecases'
 import { TaskUseCases } from '@/usecases'
 import { getTaskRepository } from '@/adapters/repositories'
 import { useNotificationStore } from './notification-store'
@@ -28,6 +28,10 @@ export const useTaskStore = defineStore('task', () => {
 
   function completionCountFor(task: Task, referenceDate: Date): number {
     return createUseCases().completionCountFor(task, referenceDate)
+  }
+
+  function checkTally(tasks: Task[], referenceDate: Date): CheckTally {
+    return createUseCases().checkTally(tasks, referenceDate)
   }
 
   function completionHistory(task: Task): CompletionPeriod[] {
@@ -119,6 +123,7 @@ export const useTaskStore = defineStore('task', () => {
     getById,
     isCompletedFor,
     completionCountFor,
+    checkTally,
     completionHistory,
     isDueOn,
     isLateOn,

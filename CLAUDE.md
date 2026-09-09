@@ -140,9 +140,19 @@ layers.
     keyframe, since the arc now has intermediate positions, and the button reports
     `aria-checked="mixed"` when partly done. It derives "completed" from the count instead of
     taking it as a prop, so the ring cannot disagree with the row it sits in.
-  - The home gauges keep counting whole tasks -- a task at 3/8 is one task left -- and each shows
-    a second, check-level figure in its foot when its own band holds a repeat. Two numbers that
-    mean different things, never one that means both.
+  - **Every meter reads CHECK-OFFS, not whole tasks**: `TaskUseCases.checkTally(tasks, date)` sums
+    each task's count for the period, clamped at its own `timesPerPeriod` so an over-full task
+    cannot lend credit to the ones beside it, against a total of the targets. A task at 3/8 moves
+    its band's gauge and its card's meter by three eighths instead of leaving them at zero until
+    the whole task lands -- and where nothing repeats every task is worth one check, so the figure
+    is the task count it always was and nothing about those pages changed. It lives in the use
+    case because both list pages ask it and a tally computed twice is a tally that can drift.
+  - The task-level figure is still there, in the gauge's FOOT (`N/M tarefas`, only when the band
+    holds a repeat): half the checks done can still be every task open. Two numbers that mean
+    different things, never one that means both. A band's own head count is the check figure, the
+    same scale as the gauge above it.
+  - `percent` never rounds UP to 100 while a check is open -- a band of 200 checks with one left
+    would otherwise read `100%` next to `Tudo concluido`, which is now driven by the count itself.
   - `MAX_COMPLETIONS` is unchanged. A task checked eight times a day spends the budget eight times
     faster and still keeps well over a year of history.
 - **Check-off history**: `at` is what makes "when was this done" answerable, and it is written by
@@ -173,8 +183,9 @@ layers.
     to say it can be switched back on. `TaskDetailView` says the same with a word, `Ativar` /
     `Desativar`, because a page has room for one.
   - A card's head ratio counts ACTIVE tasks only -- it is a reading of the work, and a task nobody
-    intends to do is not a debt. A card holding nothing but inactive tasks has no ratio to give
-    and falls back to a plain count, with no meter under it.
+    intends to do is not a debt. (It counts their CHECK-OFFS, via the shared `checkTally`.) A card
+    holding nothing but inactive tasks has no ratio to give and falls back to a plain count of the
+    rows, with no meter under it.
 
 - **Design tokens are ROLES, never colour names** -- `void` (ground), `panel`, `well`, `fg`,
   `fg-soft`, `fg-faint`, `line`, `line-strong`. The same token is deep navy in one theme and cool
@@ -235,7 +246,7 @@ layers.
   order the caller sorted into.
   - Each unit wears its category's ink four ways: a rail down the left edge, a wash across the
     head, a trace mixed into the hairline, and the fill of its own progress meter -- that
-    category's completions for the browsed period, on the same hatched track the home meter uses.
+    category's check-offs for the browsed period, on the same hatched track the home meter uses.
     The unfiled unit has no ink, so its rail is drawn as a dashed gap and its meter goes grey.
   - A task pointing at a category that no longer exists falls into the unfiled bucket rather than
     out of the page. The delete guard makes it unlikely, but a task nothing renders is a task

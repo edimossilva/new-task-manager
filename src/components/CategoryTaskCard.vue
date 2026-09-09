@@ -70,12 +70,17 @@ function countOf(task: Task): number {
  * The head's ratio is a reading of the WORK, so it counts active tasks only. A
  * card holding nothing but inactive ones has no ratio to give and falls back to
  * a plain count, the same figure the compact head shows.
+ *
+ * It counts CHECK-OFFS, not whole tasks: a task wanting eight of them is eight
+ * notches on this unit's scale, so the third one moves the meter rather than the
+ * card reading zero until the task lands. Where nothing repeats, every task is
+ * worth one check and the ratio is the task count it always was.
  */
 const activeTasks = computed(() => props.tasks.filter((task) => task.active))
-const doneCount = computed(() => activeTasks.value.filter(isCompleted).length)
+const checks = computed(() => store.checkTally(activeTasks.value, referenceDate.value))
 const hasRatio = computed(() => activeTasks.value.length > 0)
 const progress = computed(() =>
-  activeTasks.value.length === 0 ? 0 : (doneCount.value / activeTasks.value.length) * 100,
+  checks.value.total === 0 ? 0 : (checks.value.done / checks.value.total) * 100,
 )
 
 /**
@@ -113,8 +118,8 @@ function lastCompletion(task: Task): string {
         {{ category?.name ?? 'Sem categoria' }}
       </h2>
       <span v-if="hasRatio" class="unit-count figure">
-        {{ doneCount }}<span class="unit-slash">/</span>{{ activeTasks.length }}
-        <span class="sr-only">concluidas</span>
+        {{ checks.done }}<span class="unit-slash">/</span>{{ checks.total }}
+        <span class="sr-only">marcacoes concluidas</span>
       </span>
       <span v-else class="unit-count figure">
         {{ tasks.length }}
