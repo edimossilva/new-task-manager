@@ -187,6 +187,71 @@ layers.
     holding nothing but inactive tasks has no ratio to give and falls back to a plain count of the
     rows, with no meter under it.
 
+- **Weekly summary** (`/resumo`, `src/views/SummaryView.vue`): the one page that aggregates
+  check-offs across tasks BY TIME. Everything else in the app reads either one task over many
+  periods (`completionHistory`) or many tasks inside one period (`checkTally`); this reads one ISO
+  week. `TaskUseCases.weekSummary(tasks, referenceDate)` and `weekTrend(...)` take their tasks as an
+  argument for the same reason `checkTally` does -- the view holds that reactive array, and a method
+  reading the repository would not re-run when a check-off is written.
+  - **A check-off lands in a week by its `at` MOMENT**, falling back to the key's own SHAPE when
+    there is none (`daily` -> its week, `weekly` -> itself). The shape, never `task.frequency`: a
+    frequency change leaves old keys behind, and a daily key is still a day whatever the task
+    became. A legacy `monthly`/`yearly`/`once` key has neither a moment nor a day, so it lands
+    nowhere -- counted in `unplaced` and shown as a footnote, because silently losing work the user
+    did is the one thing the page must not do.
+    - The consequence is deliberate and is stated on the page: it answers "when did I do the work",
+      not "which period did it satisfy". Catching up today on last week's task counts in THIS week,
+      and the week that was short stays short. It is also why the page is READ-ONLY -- ticking
+      something off from here while browsing a past week would move a different bar than the one on
+      screen. `placeCompletion` is the single place to invert this.
+  - **Only `daily` and `weekly` tasks are expected of a week.** A monthly or yearly target belongs
+    to a month or a year; a seventh of it is a number nobody chose, and it would differ between a
+    four- and a five-week month. Those check-offs are reported as `extras`, never folded into the
+    ratio. The expectation runs through `isDueOn`, so the summary cannot claim work the list pages
+    never showed as due, and only ELAPSED days count -- compared noon to noon, since the day cells
+    are built at noon and the clock is not.
+  - Crediting is per PERIOD (`creditCounts`): eleven Monday check-offs on a task wanting three
+    cannot cover Tuesday. `done` is the honest volume, `credited` the part the ratio uses, and
+    `extras` is everything between -- surplus, stale-format keys, inactive tasks, the cadences with
+    no weekly demand. The invariant is `routine.done + extras === every check-off the week owns`.
+  - **The day strip carries its own totals.** `dailyDemand(task, day, now)` is what one DAY asks of
+    one task -- dailies and nothing else, because a single day is the only period a daily owns; a
+    weekly, monthly or yearly target belongs to a span of days and cannot be charged to one of
+    them. It is written once and summed two ways, across tasks for `expectedByWeekday` and across
+    days by `weekExpectation`, so the strip and the Diaria band cannot disagree (the invariant:
+    `sum(expectedByWeekday) === bands.daily.expected`). The strip therefore does NOT add up to
+    `routine.total`, and the block says so (`Metas diarias apenas`) rather than implying it does.
+    Elapsed is compared by day KEY, not by timestamp -- the cells are built at noon and the clock
+    is not, so `day <= now` would drop today every morning.
+    - All seven bars share ONE scale, the tallest figure in the week (done or asked), so they are
+      comparable and the target NOTCH sits at the height it means. A hairline rather than a second
+      bar: it is the reference the fill is read against, not a quantity of its own. A fill short of
+      its notch is washed out, so the day says it fell short before the figures are read.
+  - Two limits the page prints rather than papers over: targets are counted from TODAY's settings
+    (nothing versions `timesPerPeriod` or `active`), and a deleted task took its check-offs with it.
+  - The week comes from the shared `referenceDate`, so there is one clock and one browsed date:
+    prev/next are `periodStore.step(±7)`, bounded by `canStep`, and a trend bar taps through
+    `setDate` -- or `clear()` when it is the current week, so a round trip resumes following the
+    clock. `PeriodSelector` is deliberately not mounted here: it picks a day, and this page's unit
+    is a week. `periodStore.contains()` is public so the strip can DISABLE the weeks `setDate`
+    would refuse; a control that silently does nothing is worse than one that says it cannot.
+  - The view's `mondayKey` is a STRING computed on purpose: the clock ticks every 60s, and a
+    computed whose value is unchanged does not dirty its dependents, so the aggregation re-runs
+    when the day turns over rather than every minute.
+  - `weekTrend` walks every task's completions ONCE, bucketing into the eight weeks in scope --
+    eight passes over `MAX_COMPLETIONS` entries per task is what the `Map` avoids.
+  - Week math lives in `period.ts` (`weekStart`, `weekDates`, `addWeeks`, `parseDailyKey`,
+    `formatWeekShort`, `formatWeekRange`); `PeriodSelector` was refitted onto `weekDates` so
+    Monday-first has one definition. `parseDailyKey` never calls `new Date(key)` -- the date-only
+    ISO form parses as UTC, so west of it `2026-09-01` comes back as 31 August, a whole week wrong
+    at a boundary -- and it re-derives the key as its own range check, which rejects `2026-02-31`
+    without a table of month lengths.
+  - `percentOf(tally)` is shared with the home gauges: no two meters in the app may round
+    differently, and neither rounds UP to 100 while a check is still open.
+  - The nav's `Resumo` label moved to this page, and `/` became **`Hoje`** -- which is what the
+    home page is. Four dock links share the width, so the label gives up letterspacing before it
+    gives up a character.
+
 - **Design tokens are ROLES, never colour names** -- `void` (ground), `panel`, `well`, `fg`,
   `fg-soft`, `fg-faint`, `line`, `line-strong`. The same token is deep navy in one theme and cool
   aluminium in another, so `bg-paper` would have been a lie. Tailwind 4 **errors on an unknown

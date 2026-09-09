@@ -7,6 +7,7 @@ import { useTaskStore } from '@/stores/task-store'
 import { useCategoryStore } from '@/stores/category-store'
 import { usePeriodSelection } from '@/composables/use-period-selection'
 import { buildCategoryRack } from '@/composables/use-category-rack'
+import { percentOf } from '@/usecases'
 import CategoryTaskCard from '@/components/CategoryTaskCard.vue'
 import PeriodSelector from '@/components/PeriodSelector.vue'
 
@@ -67,13 +68,7 @@ const bands = computed(() =>
       label: FREQUENCY_LABELS[frequency],
       done: checks.done,
       total: checks.total,
-      // Rounded for display, but never up to 100 while a check is still open.
-      percent:
-        checks.total === 0
-          ? 0
-          : checks.done >= checks.total
-            ? 100
-            : Math.min(Math.round((checks.done / checks.total) * 100), 99),
+      percent: percentOf(checks),
       // Whole tasks, the other reading: eight of eight checks on one task and
       // one of eight on eight tasks are the same percentage and not the same day.
       tasks: { done: tasks.filter(isCompleted).length, total: tasks.length },

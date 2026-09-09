@@ -27,7 +27,8 @@ async function handleSignOut() {
       </RouterLink>
 
       <nav class="hidden sm:flex items-center gap-1 ml-4">
-        <RouterLink to="/" class="nav-link nav-link-exact">Resumo</RouterLink>
+        <RouterLink to="/" class="nav-link nav-link-exact">Hoje</RouterLink>
+        <RouterLink to="/resumo" class="nav-link">Resumo</RouterLink>
         <RouterLink to="/tasks" class="nav-link">Tarefas</RouterLink>
         <RouterLink to="/categories" class="nav-link">Categorias</RouterLink>
       </nav>
@@ -51,6 +52,13 @@ async function handleSignOut() {
     <RouterLink to="/" class="dock-link dock-link-exact">
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M4 5h7v6H4zM13 5h7v3h-7zM13 10h7v9h-7zM4 13h7v6H4z" />
+      </svg>
+      Hoje
+    </RouterLink>
+    <!-- The week's reading: bars, because that is what the page is. -->
+    <RouterLink to="/resumo" class="dock-link">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 14h3v6H4zM9.5 10h3v10h-3zM15 6h3v14h-3z" />
       </svg>
       Resumo
     </RouterLink>
@@ -134,9 +142,11 @@ async function handleSignOut() {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
+/* Four links share the width now, so the label gives up its letterspacing
+   before it gives up a character: `Categorias` is the one that has to fit. */
 .dock-link {
   @apply flex-1 flex flex-col items-center justify-center gap-0.5 py-2 min-h-14
-         font-mono text-[0.625rem] font-medium uppercase tracking-[0.1em]
+         font-mono text-[0.5625rem] font-medium uppercase tracking-[0.04em]
          text-fg-faint no-underline transition-colors duration-[120ms];
 }
 

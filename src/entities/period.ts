@@ -116,6 +116,38 @@ export function isoWeekKey(date: Date): string {
 }
 
 /**
+ * Monday of the ISO week containing `date`, at noon.
+ *
+ * Noon for the reason `period-store` builds its dates there: local midnight does
+ * not exist on a DST-transition day in some zones, and the shift would move the
+ * result to the wrong day. Monday-first is not a preference either -- weekly
+ * tasks are keyed on the ISO week, so this is exactly the span one weekly
+ * completion covers.
+ */
+export function weekStart(date: Date): Date {
+  const monday = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12)
+  monday.setDate(monday.getDate() - (isoWeekday(monday) - 1))
+  return monday
+}
+
+/** The seven days of that week, Monday first. */
+export function weekDates(date: Date): Date[] {
+  const monday = weekStart(date)
+  return Array.from({ length: 7 }, (_, index) => {
+    const day = new Date(monday)
+    day.setDate(monday.getDate() + index)
+    return day
+  })
+}
+
+/** `date` shifted by whole weeks, normalized to the resulting week's Monday. */
+export function addWeeks(date: Date, weeks: number): Date {
+  const monday = weekStart(date)
+  monday.setDate(monday.getDate() + weeks * 7)
+  return monday
+}
+
+/**
  * Stable identifier for the period `date` falls in, for the given frequency.
  *
  * Every getter is local-time on purpose. `toISOString().slice(0, 10)` would hand
@@ -181,6 +213,36 @@ const KEY_PATTERNS: Record<TaskFrequency, RegExp> = {
  */
 export function matchesFrequency(frequency: TaskFrequency, key: string): boolean {
   return KEY_PATTERNS[frequency].test(key)
+}
+
+/**
+ * The day a `daily` period key names, or null for a key in any other format.
+ *
+ * Built field by field on purpose: `new Date('2026-09-01')` is parsed as UTC, so
+ * anywhere west of it the key would name the day before. Noon, like every other
+ * date this app constructs.
+ */
+export function parseDailyKey(key: string): Date | null {
+  if (!matchesFrequency('daily', key)) return null
+  const [year, month, day] = key.split('-').map(Number)
+  const date = new Date(year!, month! - 1, day!, 12)
+  // Re-deriving the key IS the range check: `new Date(2026, 1, 31)` rolls over
+  // to 2 March, so a hand-edited `2026-02-31` would otherwise name a real day
+  // in the wrong month. One round trip beats a table of month lengths.
+  return periodKey('daily', date) === key ? date : null
+}
+
+/** `W37`, the label a trend bar wears. The week number alone, never the year. */
+export function formatWeekShort(date: Date): string {
+  return `W${pad(isoWeek(date).week)}`
+}
+
+/** `07/09 - 13/09`, the span of the week containing `date`. */
+export function formatWeekRange(date: Date): string {
+  const days = weekDates(date)
+  const first = days[0]!
+  const last = days[6]!
+  return `${pad(first.getDate())}/${pad(first.getMonth() + 1)} - ${pad(last.getDate())}/${pad(last.getMonth() + 1)}`
 }
 
 /** dd/mm/yyyy, the format the period selector shows. */

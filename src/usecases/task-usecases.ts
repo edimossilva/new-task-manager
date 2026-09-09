@@ -1,5 +1,16 @@
-import type { Completion, CreateTaskInput, Task } from '@/entities'
-import { createTask, isoWeekday, periodKey } from '@/entities'
+import type { Completion, CreateTaskInput, Task, TaskFrequency } from '@/entities'
+import {
+  FREQUENCIES,
+  addWeeks,
+  createTask,
+  formatWeekShort,
+  isoWeekKey,
+  isoWeekday,
+  matchesFrequency,
+  parseDailyKey,
+  periodKey,
+  weekDates,
+} from '@/entities'
 import type { TaskRepository } from './ports'
 import { validateRequiredText, validateTimesPerPeriod } from './validation'
 
@@ -13,6 +24,91 @@ export interface CheckTally {
   done: number
   total: number
 }
+
+/**
+ * A tally as a whole percentage.
+ *
+ * Never rounds UP to 100 while a check is still open: a band of two hundred
+ * expected with one missing must not read `100%` beside `Tudo concluido`.
+ * Exported so no two meters in the app can round differently.
+ */
+export function percentOf(tally: CheckTally): number {
+  if (tally.total === 0) return 0
+  if (tally.done >= tally.total) return 100
+  return Math.min(Math.round((tally.done / tally.total) * 100), 99)
+}
+
+/** One task's week: what the routine asked of it, and what actually happened. */
+export interface WeekTaskRow {
+  task: Task
+  /** Every check-off placed in the week. The honest volume, nothing clamped. */
+  done: number
+  /**
+   * The part of `done` the week can credit: clamped per PERIOD, and only for
+   * keys written under the task's current frequency. `done - credited` is work
+   * that happened with no expectation to sit against.
+   */
+  credited: number
+  /** What the week asked of this task. 0 for a frequency with no weekly cadence. */
+  expected: number
+  /** The check-offs that could be placed on a DAY, Monday first. Always length 7. */
+  byWeekday: number[]
+  /** Counted in `done`, but no day could be derived for them. */
+  undated: number
+}
+
+/** One frequency band's week. `expected` is 0 for the bands the week cannot ask of. */
+export interface WeekBand {
+  frequency: TaskFrequency
+  /** Every check-off placed in the week, clamped nowhere. */
+  done: number
+  /** The part of it the week can credit -- what the band's meter reads. */
+  credited: number
+  expected: number
+}
+
+/** Everything the summary page reads, for one ISO week. */
+export interface WeekSummary {
+  /** The ISO week key the whole reading is about, e.g. `2026-W37`. */
+  key: string
+  start: Date
+  end: Date
+  /** The routine: only the tasks this week actually asked something of. */
+  routine: CheckTally
+  /** Done, but never asked for this week -- no weekly cadence, or out of the routine. */
+  extras: number
+  /** Check-offs per weekday, Monday first. */
+  byWeekday: number[]
+  /**
+   * What each day asked for, Monday first -- the DAILIES' demand and nothing
+   * else, since no other cadence belongs to a single day. It therefore does NOT
+   * sum to `routine.total`, and the page must not present it as if it did; it
+   * does sum to the Diaria band's `expected`, which is the same figure.
+   */
+  expectedByWeekday: number[]
+  /** Counted in the totals, but placeable on no day. */
+  undated: number
+  /** Legacy check-offs that belong to no week at all. Reported, never dropped. */
+  unplaced: number
+  bands: WeekBand[]
+  rows: WeekTaskRow[]
+}
+
+/** One bar of the trend strip. */
+export interface WeekTrendPoint {
+  key: string
+  start: Date
+  /** `W37` -- a bar is too narrow for the week-year. */
+  label: string
+  done: number
+  expected: number
+  extras: number
+  /** The week still running: an unfinished week is not a shortfall. */
+  isCurrent: boolean
+}
+
+/** Weeks the trend strip carries, the focused one included. */
+const TREND_WEEKS = 8
 
 /** One period's worth of check-offs, as `completionHistory` reports it. */
 export interface CompletionPeriod {
@@ -144,6 +240,289 @@ export class TaskUseCases {
       }),
       { done: 0, total: 0 },
     )
+  }
+
+  /**
+   * The ISO week a check-off lands in, or null when it lands in none.
+   *
+   * The MOMENT wins when the entry carries one, so the page answers "when was
+   * the work done" rather than "which period did it satisfy". The consequence is
+   * deliberate and has to be said out loud: catching up today on last week's
+   * task counts in TODAY's week, and the week that was short stays short.
+   *
+   * With no moment, the KEY's own shape is tested rather than the task's current
+   * frequency -- a frequency change leaves keys of the old format behind, and a
+   * daily key is still a day whatever the task has since become. A monthly,
+   * yearly or one-off key names no day and no week, so it places nowhere.
+   */
+  private placeCompletion(completion: Completion): string | null {
+    if (completion.at) return isoWeekKey(completion.at)
+    if (matchesFrequency('weekly', completion.key)) return completion.key
+    const day = parseDailyKey(completion.key)
+    return day ? isoWeekKey(day) : null
+  }
+
+  /**
+   * The day a check-off happened on, or null when nothing says.
+   *
+   * The same order as `placeCompletion`, one resolution finer: a weekday strip
+   * can only show what pins to a day, and a weekly key names seven of them.
+   */
+  private completionDay(completion: Completion): Date | null {
+    return completion.at ?? parseDailyKey(completion.key)
+  }
+
+  /**
+   * What one DAY asks of one task.
+   *
+   * Dailies and nothing else, because a single day is the only period a daily
+   * owns: a weekly, monthly or yearly target belongs to a span of days and
+   * cannot be charged to one of them. It is written once, here, so the day strip
+   * and the Diaria band can never disagree about the same number -- the strip
+   * sums it across tasks, `weekExpectation` sums it across days.
+   *
+   * A day that has not happened asks nothing, compared by KEY rather than by
+   * timestamp: the day cells are built at noon and the clock is not, so
+   * `day <= now` would drop today every morning. `isDueOn` carries existence and
+   * the weekday gate, so this can never claim work the list pages never showed
+   * as due, and an inactive task asks nothing at all -- the rule the home page's
+   * ratio already uses.
+   */
+  private dailyDemand(task: Task, day: Date, now: Date): number {
+    if (!task.active || task.frequency !== 'daily') return 0
+    if (periodKey('daily', day) > periodKey('daily', now)) return 0
+    return this.isDueOn(task, day) ? task.timesPerPeriod : 0
+  }
+
+  /**
+   * How many check-offs the week asked of one task.
+   *
+   * Only `daily` and `weekly` have a weekly cadence. A monthly or yearly target
+   * belongs to a month or a year; a seventh of it is a number nobody chose, and
+   * it would differ between a four-week and a five-week month -- so those ask
+   * nothing and their check-offs are reported as extras instead. Inactive tasks
+   * ask nothing either, the rule the home page's ratio already uses; the flag is
+   * today's, so switching a task off lowers what past weeks are judged against.
+   */
+  private weekExpectation(task: Task, days: Date[], now: Date): number {
+    if (!task.active) return 0
+
+    if (task.frequency === 'daily') {
+      return days.reduce((total, day) => total + this.dailyDemand(task, day, now), 0)
+    }
+    if (task.frequency === 'weekly') {
+      // One demand for the whole week, from the day it comes up: an unpinned
+      // weekly task is due from Monday, a Sabado task not until Saturday. The
+      // last ELAPSED day answers both halves, since `existsIn` is week-granular
+      // for a weekly task and the weekday gate lives inside `isDueOn`.
+      const todayKey = periodKey('daily', now)
+      const elapsed = days.filter((day) => periodKey('daily', day) <= todayKey)
+      const last = elapsed[elapsed.length - 1]
+      return last && this.isDueOn(task, last) ? task.timesPerPeriod : 0
+    }
+    return 0
+  }
+
+  /**
+   * Splits a week's check-offs for one task into what it can credit and how many
+   * there were, given the entries grouped by their own period key.
+   *
+   * Crediting is per PERIOD -- `Math.min(count, target)`, the clamp `checkTally`
+   * makes -- so eleven check-offs on Monday for a task wanting three cannot
+   * cover Tuesday. A key left behind by a frequency change credits nothing: it
+   * is real work under a cadence the task has left, and it is reported as an
+   * extra rather than measured against a target it never had.
+   */
+  private creditCounts(
+    task: Task,
+    counts: Map<string, number>,
+  ): { credited: number; placed: number } {
+    let credited = 0
+    let placed = 0
+    for (const [key, count] of counts) {
+      placed += count
+      if (matchesFrequency(task.frequency, key)) {
+        credited += Math.min(count, task.timesPerPeriod)
+      }
+    }
+    return { credited, placed }
+  }
+
+  /**
+   * The whole reading for the ISO week containing `referenceDate`.
+   *
+   * `tasks` is a parameter for the same reason `checkTally`'s is: the views hold
+   * that array and re-render from it, while a method reading the repository
+   * itself would not re-run when a check-off is written.
+   *
+   * An EXPECTATION is what makes a check-off part of the routine's ratio. Work
+   * the week never asked for -- a monthly task, one out of the routine, a
+   * surplus tick, a key from an old frequency -- is counted apart in `extras`
+   * rather than dropped or averaged into a percentage it would distort. The
+   * invariant: `routine.done + extras` is every check-off the week owns.
+   */
+  weekSummary(tasks: Task[], referenceDate: Date, now: Date = new Date()): WeekSummary {
+    const days = weekDates(referenceDate)
+    const key = isoWeekKey(days[0]!)
+
+    const bands = new Map<TaskFrequency, WeekBand>(
+      FREQUENCIES.map((frequency) => [frequency, { frequency, done: 0, credited: 0, expected: 0 }]),
+    )
+    const byWeekday = [0, 0, 0, 0, 0, 0, 0]
+    const expectedByWeekday = [0, 0, 0, 0, 0, 0, 0]
+    const routine: CheckTally = { done: 0, total: 0 }
+    const rows: WeekTaskRow[] = []
+    let extras = 0
+    let undated = 0
+    let unplaced = 0
+
+    for (const task of tasks) {
+      const row: WeekTaskRow = {
+        task,
+        done: 0,
+        credited: 0,
+        expected: this.weekExpectation(task, days, now),
+        byWeekday: [0, 0, 0, 0, 0, 0, 0],
+        undated: 0,
+      }
+
+      // Grouped by their own period key, because crediting is per period.
+      const counts = new Map<string, number>()
+
+      for (const completion of task.completions) {
+        const placed = this.placeCompletion(completion)
+        if (placed === null) {
+          // Belongs to no week at all, so it is not this week's -- but it is
+          // still history, and the page says so rather than losing it silently.
+          unplaced += 1
+          continue
+        }
+        if (placed !== key) continue
+
+        row.done += 1
+        counts.set(completion.key, (counts.get(completion.key) ?? 0) + 1)
+
+        const day = this.completionDay(completion)
+        if (day) row.byWeekday[isoWeekday(day) - 1]! += 1
+        else row.undated += 1
+      }
+
+      // Nothing expected, nothing creditable: a monthly task's check-off is an
+      // extra whatever its own target says, so `credited` must not imply
+      // otherwise to anything reading a row later.
+      row.credited = row.expected > 0 ? this.creditCounts(task, counts).credited : 0
+
+      const band = bands.get(task.frequency)!
+      band.done += row.done
+      band.credited += row.credited
+      band.expected += row.expected
+
+      if (row.expected > 0) {
+        routine.done += row.credited
+        routine.total += row.expected
+        extras += row.done - row.credited
+      } else {
+        extras += row.done
+      }
+
+      row.byWeekday.forEach((count, index) => {
+        byWeekday[index]! += count
+      })
+      days.forEach((day, index) => {
+        expectedByWeekday[index]! += this.dailyDemand(task, day, now)
+      })
+      undated += row.undated
+      rows.push(row)
+    }
+
+    return {
+      key,
+      start: days[0]!,
+      end: days[6]!,
+      routine,
+      extras,
+      byWeekday,
+      expectedByWeekday,
+      undated,
+      unplaced,
+      bands: FREQUENCIES.map((frequency) => bands.get(frequency)!),
+      rows,
+    }
+  }
+
+  /**
+   * The focused week and the ones before it, oldest first, so the strip reads
+   * left to right into the present.
+   *
+   * The bars measure exactly what the headline does -- credited against expected
+   * -- so a bar and the page it jumps to cannot disagree.
+   *
+   * One pass over every check-off rather than one per week: a task can hold
+   * `MAX_COMPLETIONS` entries, and the strip would otherwise read all of them
+   * eight times over.
+   */
+  weekTrend(
+    tasks: Task[],
+    referenceDate: Date,
+    weeks: number = TREND_WEEKS,
+    now: Date = new Date(),
+  ): WeekTrendPoint[] {
+    const currentKey = isoWeekKey(now)
+    const points: WeekTrendPoint[] = Array.from({ length: weeks }, (_, index) => {
+      const start = addWeeks(referenceDate, index - (weeks - 1))
+      const key = isoWeekKey(start)
+      return {
+        key,
+        start,
+        label: formatWeekShort(start),
+        done: 0,
+        expected: 0,
+        extras: 0,
+        isCurrent: key === currentKey,
+      }
+    })
+
+    // Built once, outside the task loop: seven Dates per week per task is a lot
+    // of garbage for a figure that does not depend on the task.
+    const grids = points.map((point) => weekDates(point.start))
+    const indexByKey = new Map(points.map((point, index) => [point.key, index]))
+
+    for (const task of tasks) {
+      const expectations = grids.map((days) => this.weekExpectation(task, days, now))
+      expectations.forEach((expected, index) => {
+        points[index]!.expected += expected
+      })
+
+      // Bucketed by week, then by period key, since both the window test and the
+      // per-period clamp have to happen before anything is credited.
+      const counts = new Map<number, Map<string, number>>()
+      for (const completion of task.completions) {
+        const placed = this.placeCompletion(completion)
+        if (placed === null) continue
+        const index = indexByKey.get(placed)
+        if (index === undefined) continue
+
+        let byKey = counts.get(index)
+        if (!byKey) {
+          byKey = new Map()
+          counts.set(index, byKey)
+        }
+        byKey.set(completion.key, (byKey.get(completion.key) ?? 0) + 1)
+      }
+
+      for (const [index, byKey] of counts) {
+        const point = points[index]!
+        const { credited, placed } = this.creditCounts(task, byKey)
+        if (expectations[index]! > 0) {
+          point.done += credited
+          point.extras += placed - credited
+        } else {
+          point.extras += placed
+        }
+      }
+    }
+
+    return points
   }
 
   /**

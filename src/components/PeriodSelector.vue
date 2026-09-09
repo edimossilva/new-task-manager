@@ -6,6 +6,7 @@ import {
   WEEKDAY_SHORT,
   isSameDay,
   isoWeekday,
+  weekDates,
   type Weekday,
 } from '@/entities'
 import { usePeriodStore } from '@/stores/period-store'
@@ -21,18 +22,10 @@ const showJump = ref(false)
 /**
  * The ISO week containing the selected day, Monday first.
  *
- * This is not decoration: weekly tasks are keyed on the ISO week, so the strip
- * is exactly the span one weekly completion covers.
+ * Shared with the weekly summary through `weekDates`: two Monday-first
+ * derivations would be two chances to disagree about where a week starts.
  */
-const weekDays = computed(() => {
-  const monday = new Date(referenceDate.value)
-  monday.setDate(monday.getDate() - (isoWeekday(monday) - 1))
-  return Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(monday)
-    date.setDate(monday.getDate() + index)
-    return date
-  })
-})
+const weekDays = computed(() => weekDates(referenceDate.value))
 
 const monthLabel = computed(
   () => `${MONTH_NAMES[referenceDate.value.getMonth()]} ${referenceDate.value.getFullYear()}`,
@@ -55,8 +48,9 @@ const yearOptions = computed(() =>
   ),
 )
 
+/** The store's own window, so the strip cannot offer a day `setDate` refuses. */
 function inRange(date: Date): boolean {
-  return date.getFullYear() >= store.firstYear && date.getFullYear() <= store.lastYear
+  return store.contains(date)
 }
 </script>
 

@@ -114,6 +114,17 @@ export const usePeriodStore = defineStore('period', () => {
     return withinRange(partsOf(next))
   }
 
+  /**
+   * Whether the browsable window contains this date.
+   *
+   * Public because the trend strip has to DISABLE the weeks `setDate` would
+   * refuse -- a control that silently does nothing is worse than one that says
+   * it cannot.
+   */
+  function contains(date: Date): boolean {
+    return withinRange(partsOf(date))
+  }
+
   /** Back to following the clock. Must be null, not today's parts. */
   function clear(): void {
     selection.value = null
@@ -130,6 +141,7 @@ export const usePeriodStore = defineStore('period', () => {
     setDate,
     step,
     canStep,
+    contains,
     clear,
   }
 })
