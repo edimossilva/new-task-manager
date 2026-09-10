@@ -146,7 +146,8 @@ layers.
     its band's gauge and its card's meter by three eighths instead of leaving them at zero until
     the whole task lands -- and where nothing repeats every task is worth one check, so the figure
     is the task count it always was and nothing about those pages changed. It lives in the use
-    case because both list pages ask it and a tally computed twice is a tally that can drift.
+    case because home and the summary both ask it and a tally computed twice is a tally that can
+    drift.
   - The task-level figure is still there, in the gauge's FOOT (`N/M tarefas`, only when the band
     holds a repeat): half the checks done can still be every task open. Two numbers that mean
     different things, never one that means both. A band's own head count is the check figure, the
@@ -168,20 +169,79 @@ layers.
     several formats behind, and those do not sort chronologically against each other. Grouping
     lives in the use case because "which period is this check-off part of" is the model's own
     question.
-  - `TaskDetailView` at **`/tasks/:id`** renders it: the task's badges, its current period (with a
-    working stamp and gauge, since reading the history and finishing the period are often the same
-    visit), and the log. Two ways in from the tasks page: the **info icon** at the head of each
-    row's actions, and the task title itself.
+  - `TaskDetailView` at **`/tasks/:id`** renders it, at the bottom of the page and capped at
+    eight periods until asked to open: a log of four hundred periods is a page nobody scrolls.
+    Two ways in from the registry: the **info icon** in the row's actions, and the task title
+    itself; one from the rack, the same icon.
+
+- **The task's own reading** (`/tasks/:id`): the only page that reads ONE task across MANY
+  periods. Home reads many tasks in one period, the summary reads one week across tasks, and this
+  reads one task across its whole life. Everything on it comes from
+  `TaskUseCases.taskInsight(task, now)` -- one method, one pass over `completions`, because a task
+  can hold `MAX_COMPLETIONS` entries and six aggregations would otherwise walk them six times.
+  - **`periodIndex(frequency, key)`** in `period.ts` is what makes a streak arithmetic. Period
+    keys are strings whose successor cannot be computed by hand -- `2026-W52` is followed by
+    `2026-W53` in some years and `2027-W01` in others -- so each key is mapped to a monotonic
+    INDEX where consecutive periods differ by exactly 1. Daily and weekly indices come from a UTC
+    day number (UTC has no DST to absorb; the weekly one subtracts 4 because the epoch is a
+    Thursday and Mondays sit at 4 mod 7), monthly is `year * 12 + month`, yearly is the year.
+    `year * 53 + week` would NOT be linear, which is the trap this exists to avoid.
+  - `parseWeekKey` inverts a weekly key the way `parseDailyKey` inverts a daily one, anchored on
+    4 January -- in ISO week 1 by definition, every year -- and re-derives the key as its own
+    range check, since `2025-W53` names no week. `addPeriods` steps a date by whole periods and
+    always lands on a day that EXISTS: stepping back a month from the 31st would otherwise roll
+    forward into the following month and a twelve-month chart would skip February.
+  - **The streak does not break while the current period is still open.** A daily task kept for
+    forty days must not read zero every morning until the box is ticked, so the walk starts at
+    the previous period when the current one is not done yet, and includes it once it is.
+    `bestStreak` is the longest run of consecutive indices ever recorded.
+  - Everything counting PERIODS counts only keys written under the task's CURRENT frequency, the
+    rule `completionHistory`'s callers already live by. The difference is shown rather than
+    hidden: the Marcacoes tile says `N fora da cadencia` when the two totals disagree.
+  - **Three charts, each answering a question the others cannot**, all drawn from role tokens and
+    the same hatched track every meter in the app uses:
+    - `TaskRunChart` -- the last N periods of the task's own cadence (14 daily, 12 weekly, 12
+      monthly, 8 yearly), on ONE shared scale so the bars are comparable and the target notch
+      sits at the height it means. Short of target is washed out, the running period is dashed
+      rather than judged, periods before the task existed are dimmed rather than counted as
+      misses. Above twelve bars the labels are thinned to every other one, counted BACK from the
+      newest, which must always be named. The notch is drawn per bar because only the bars know
+      the plot's own height -- a rule spanning the chart would be positioned against the label
+      strip too.
+    - `TaskHeatmap` -- eighteen weeks of days, daily tasks only: for any other cadence every cell
+      in a column but one would be blank, which reads as a task nobody keeps rather than as a
+      cadence that does not visit every day. Cells are built COLUMN BY COLUMN in the use case,
+      which is the order a CSS grid flowing down its rows lays them out. Four steps and an
+      overflow, measured against the task's own `timesPerPeriod` so a repeat task is not
+      permanently pale, and an empty cell keeps a `well` ground under the hatch so the season
+      reads as a grid of days rather than as marks scattered on nothing.
+    - `TaskRhythm` -- WHEN the work happens, which the periods cannot say: seven weekday bars
+      (anything that pins to a day, `at` first and the daily key as the fallback, the same order
+      `placeCompletion` uses) beside a 24-hour polar dial (only entries carrying an `at` can
+      answer). All twenty-four spokes are drawn, the empty ones as stubs: a dial missing half its
+      spokes reads as a broken instrument. The peak hour takes the user's accent and sits in the
+      hub as a figure.
+  - The four tiles above them are the readings a habit tracker owes you: **Sequencia** (with the
+    best beneath it), **Aproveitamento** (`periodsDone / periodsElapsed`, through the shared
+    `percentOf`, and the only tile with a meter because it is the only figure that is a ratio),
+    **Marcacoes** and **Ultima** (`Hoje` / `Ontem` / N days, with the moment beneath).
+  - A **one-off** has one period and it is the current one, so it has no cadence to read: the
+    streak, adherence and run-chart blocks are dropped rather than shown at zero.
+  - The page's own header is a **plate** wearing the category's ink the way a rack unit does --
+    rail, wash, hairline trace -- so a task looks like its category before it is read. Its
+    actions stack under the title below `sm`: two buttons are 215px of a 388px line, and a title
+    squeezed into what is left breaks one word per row.
 - **Active flag**: `task.active` is "part of the routine right now". The home page filters on it;
   the tasks page does NOT, and that asymmetry is the whole design -- an inactive task keeps its
   history, keeps its row, and keeps the control that brings it back. It is deliberately absent
   from `isDueOn`, since a predicate that hid the task everywhere would leave no way out of the
   state. `deserialize` treats only an explicit `false` as inactive, so every document written
   before the flag reads as active and nothing disappears on deploy.
-  - The row wears the state: faded title, an `Inativa` chip where `Atrasada` would sit, a dial
-    that does not turn (`TaskStamp` takes `disabled`), and a power key that lights in the accent
-    to say it can be switched back on. `TaskDetailView` says the same with a word, `Ativar` /
-    `Desativar`, because a page has room for one.
+  - Each page says it in its own register: the rack fades the title, swaps an `Inativa` chip in
+    where `Atrasada` would sit and stops the dial turning (`TaskStamp` takes `disabled`); the
+    registry gives it a column, a tab and a power key that lights in the accent to say it can be
+    switched back on. `TaskDetailView` says it with a word, `Ativar` / `Desativar`, because a page
+    has room for one.
   - A card's head ratio counts ACTIVE tasks only -- it is a reading of the work, and a task nobody
     intends to do is not a debt. (It counts their CHECK-OFFS, via the shared `checkTally`.) A card
     holding nothing but inactive tasks has no ratio to give and falls back to a plain count of the
@@ -207,8 +267,8 @@ layers.
   - **Only `daily` and `weekly` tasks are expected of a week.** A monthly or yearly target belongs
     to a month or a year; a seventh of it is a number nobody chose, and it would differ between a
     four- and a five-week month. Those check-offs are reported as `extras`, never folded into the
-    ratio. The expectation runs through `isDueOn`, so the summary cannot claim work the list pages
-    never showed as due, and only ELAPSED days count -- compared noon to noon, since the day cells
+    ratio. The expectation runs through `isDueOn`, so the summary cannot claim work home never
+    showed as due, and only ELAPSED days count -- compared noon to noon, since the day cells
     are built at noon and the clock is not.
   - Crediting is per PERIOD (`creditCounts`): eleven Monday check-offs on a task wanting three
     cannot cover Tuesday. `done` is the honest volume, `credited` the part the ratio uses, and
@@ -298,17 +358,48 @@ layers.
   **optional** -- tasks predate categories and must keep working without one.
   - `CategoryUseCases.delete` is **blocked while any task references the category**, the same guard
     the reference app puts on owners. `countTasks` drives the list column and that guard.
+  - **The category's own page** at **`/categories/:id`** (`CategoryDetailView.vue`) is the task
+    page's shape one altitude up. A task's page answers "am I keeping this"; only a page holding
+    all of them can answer **"which of these am I keeping"**, and that roll -- every task with its
+    adherence meter, streak and last check-off, WORST FIRST -- is the reading nothing else in the
+    app gives. Ways in: the badge and the info key on the categories page, and both the name and
+    an info key in the head of every rack unit on home -- the same glyph the task rows wear
+    (`CategoryInfoLink`, on the shared `.task-action` shape), because it is the same job one
+    altitude up. The unfiled unit is not a category and has none.
+    - It owns no aggregation of its own. The rows are `taskInsight` per task, the trend is
+      `weekTrend(categoryTasks, ...)` and the horizons are `weekSummary(...).bands` -- every
+      figure narrowed to this category by filtering the task array the methods already take.
+    - **A week is the only period every cadence shares**, so this page counts in weeks where a
+      task's page counts in its own periods. The trend is fed to `TaskRunChart` by mapping a week
+      onto a period (done -> count, expected -> target), so both pages speak one bar language and
+      there is no second chart component. That mapping is why the chart's target notch is
+      computed **per bar**: a category's weeks ask for different amounts as its tasks come and go.
+    - Adherence is **pooled, not averaged**: periods done over periods asked, summed across
+      tasks. An average of percentages would let a yearly task with one period on the books weigh
+      as much as a daily one with three hundred, which is not what the figure means.
+    - A horizon a week cannot ask of -- monthly, yearly, one-off -- gets a **dashed gap instead of
+      an empty meter**: a hatched track reading zero is a claim of failure, and nothing was asked
+      of a monthly task this Tuesday. The same grammar as the unfiled rack unit's rail.
+    - `taskInsight` special-cases the one-off's `periodsDone`, since it has a period but no index
+      to land in `doneIndices`: without it a FINISHED one-off would read 0% kept on this roll,
+      which is the opposite of the truth.
   - Colour is an ink name from the shared palette (all twenty offered). `deserialize` falls back
     to `DEFAULT_CATEGORY_INK` for an unknown value rather than rendering an unstyled chip.
   - `InkSwatches.vue` is shared by the category form and the accent picker, and binds colours
     inline from `INKS` -- twenty per-ink CSS classes in each consumer was the alternative.
   - `CategoryBadge` is deliberately quieter than `FrequencyBadge` -- a dot plus text, no filled
     ground. Two saturated chips per row was too noisy on a phone.
-- **Both list pages are racks of category modules** (`CategoryTaskCard.vue`), one card per
-  category with the unfiled bucket last, laid out by the shared `.rack` class in CSS **columns**
-  (1 / 2 / 3 by breakpoint) so a unit with two tasks stays short instead of padding itself out to
-  match a unit with nine. `useCategoryRack()` does the grouping for both, preserving whatever
-  order the caller sorted into.
+- **Two pages, two shapes.** `/` (Hoje) is the RACK: cards of category modules, for checking
+  today's work off. `/tasks` is the REGISTRY: one table row per task, for editing the templates.
+  The split is the point -- a template has no "done", so the tasks page mounts no
+  `PeriodSelector`, filters nothing by `isDueOn`, and shows no completion state at all. Nothing on
+  it changes when the clock does.
+- **The rack** (`CategoryTaskCard.vue`), one card per category with the unfiled bucket last, laid
+  out by the shared `.rack` class in CSS **columns** (1 / 2 / 3 by breakpoint) so a unit with two
+  tasks stays short instead of padding itself out to match a unit with nine. `buildCategoryRack()`
+  does the grouping, preserving whatever order the caller sorted into. It is a plain function
+  rather than a composable because every caller builds SEVERAL racks inside one computed -- one
+  per band on home, one per category on the summary -- which a composable cannot do in a loop.
   - Each unit wears its category's ink four ways: a rail down the left edge, a wash across the
     head, a trace mixed into the hairline, and the fill of its own progress meter -- that
     category's check-offs for the browsed period, on the same hatched track the home meter uses.
@@ -316,47 +407,74 @@ layers.
   - A task pointing at a category that no longer exists falls into the unfiled bucket rather than
     out of the page. The delete guard makes it unlikely, but a task nothing renders is a task
     nobody can edit or delete.
-  - This replaced the md+ sortable table, so sorting moved into an `Ordenar` select plus a
-    direction toggle, both driving the same `useSortable`: it orders the rows INSIDE every card
-    and has no `category` key, because the cards are the categories. `Situacao` leads by default,
-    which puts Atrasada at the top of each unit. The category filter went with the table for the
-    same reason -- scrolling to a card is the filter now.
-  - Row anatomy: tags and actions share one baseline instead of the actions standing in a column
-    of their own, which made every row twice as tall as its content and cost the card 110px of
-    width it does not have three-across. The three actions -- details, edit, delete -- are ICONS
-    for the same reason: they repeat identically on every row, so there is nothing to read twice,
-    and three labelled links would not fit. Each is a 44px-tall target showing a 17px glyph, drawn
-    as inline SVG (the app has no icon set), faint until hovered; delete goes to `--color-alarm`,
-    the other two to the accent.
-  - Each unit head on the tasks page carries a `+` key that opens the form at
-    `/tasks/new?category=<id>`, and `TaskFormView` preselects from that query. It checks the id
-    against the loaded categories first, since a select whose value matches no `<option>` renders
-    blank, and only for a NEW task, so it can never overwrite what an edited one points at. The
-    unfiled unit links to a plain `/tasks/new`, which is exactly what that unit collects. Compact
-    units have no key: home is for checking tasks off, not filing them.
-  - Above them sits a **gauge per band**, not one meter for the day: four dailies left and one
-    yearly left are not the same debt, and a single bar averaging them says neither. Each gauge is
-    tinted with its band's frequency ink, so a glance maps it to the stratum below without reading
-    the label, and the cluster wraps rather than gridding, so one horizon or five both read.
+  - The card carries only what checking off needs: stamp, title, gauge, weekday and state chips,
+    and **one action -- `TaskInfoLink`**, the way into the task's own page. Reading a task is
+    safe from a page whose job is ticking things off; editing, switching off and deleting belong
+    to the registry. No description and no frequency badge (the band above already names it). It
+    had a second, denser mode while the tasks page shared it; the table took that job, and a
+    component with one caller has no reason to keep the branch.
+  - The chip row is dropped entirely when a task has nothing to say there, rather than spending
+    its top margin on an empty line, and the info link is pulled up out of the row's padding so a
+    44px target cannot make a row taller than its 30px stamp.
+  - Above the bands sits a **gauge per band**, not one meter for the day: four dailies left and
+    one yearly left are not the same debt, and a single bar averaging them says neither. Each
+    gauge is tinted with its band's frequency ink, so a glance maps it to the stratum below
+    without reading the label, and the cluster wraps rather than gridding, so one horizon or five
+    both read.
   - The **home page** stacks its units in one **band per frequency**, `FREQUENCIES` order: Unica
     on top, then Diaria, Semanal, Mensal, Anual. Each band holds its own rack, so a category with a daily
     and a monthly task appears once per band -- the band is the outer axis, the category the
     inner. A band's rule starts at that frequency's `--color-freq-*` ink and burns off, and the
     head carries its own done/total; empty bands are dropped rather than shown.
-  - Home passes `compact`, which changes only the rows: no description, no last-completion meta,
-    no actions. `hideFrequency` is a SEPARATE prop rather than part of `compact`, because it is a
-    statement about the CALLER -- home's band label already names the frequency, while the tasks
-    page has nothing else saying it. The head and its meter are the unit's identity and read the
-    same on both pages.
-  - `buildCategoryRack()` is a plain function precisely because of the bands: `useCategoryRack()`
-    wraps it for the tasks page, which has one rack, while home builds one per band inside a
-    single computed, which a composable could not do in a loop.
   - Home has **no Pendentes / Concluidas split**: one card per category, holding all of it. The
     sort carries what the split used to say -- Atrasada, then pending, then done, so what needs
     attention rises and what is finished sinks under it -- and the head's ratio plus meter turn
     each card into that category's reading for the day. It replaced `DashTaskGroups`, which
     grouped by frequency inside one list; the frequency is now the band around the cards, so the
     sort inside a card needs no term for it -- status, then title.
+- **The registry** (`TaskListView.vue`): EVERY task, once, whether or not it is due today, active,
+  or finished. Six fields, all of them properties of the template -- title (+ description),
+  frequency (+ weekday), category, `timesPerPeriod` as `Nx`, `Ativa` / `Inativa`, and the row
+  actions. It is the only place that shows the whole set, which is what makes it the place to
+  find a task you have not seen in a month.
+  - A table above `md` and a stacked card list below it, the same pair `CategoryListView` uses:
+    six columns on a 360px screen is a horizontal scroll nobody wants. Both render the same rows
+    from the same sort, so there is one list with two typographies, not two lists.
+  - Sorting is `useSortable` again, driven by the **column heads** where they exist and by an
+    `Ordenar` select plus direction toggle below `md`, where they do not -- the select is
+    `md:hidden` precisely so no width offers two ways to do it. The `category` key sorts unfiled
+    last with a `\uffff` sentinel, matching the rack's own order.
+  - The default is **category, then frequency, then title**, and it is built out of ONE sort key
+    rather than a multi-key comparator: the rows are pre-sorted by frequency and title, and
+    `Array.prototype.sort` is stable, so every column the user picks keeps that pair as its
+    tie-break and the opening `category` key reads as all three. Reversing Categoria therefore
+    flips the grouping while leaving frequency and title ascending inside it, which is what a
+    reader of the column expects.
+  - **The row is washed in its category's ink** -- `dim`, the same 12% the rack unit's head
+    takes, so a category looks the same on both pages and the table groups visually under the
+    default sort without a header row per category. Bound inline from `INKS`, as every ink in the
+    app is. A `tinted` class, not a fallback value, is what marks a row that HAS a category: an
+    unfiled row must keep the ordinary `bg-well` hover rather than a wash of a colour it does not
+    have. The table row takes the wash as a `background-color` (the table's panel is under it);
+    the mobile card takes it as a `linear-gradient` IMAGE, because there it has to composite over
+    `bg-panel` rather than replace it, and its hairline takes a trace of the ink the way the rack
+    unit's does.
+  - Filters are frequency, category (including `Sem categoria`, keyed by the shared `UNFILED`)
+    and a `Todas / Ativas / Inativas` tab strip. The tab counts read the OTHER two filters only,
+    so they stay stable as the tab is switched -- the same relationship the status tabs had.
+  - `TaskRowActions.vue` is the four things the registry can do to a task: power, details, edit,
+    delete. Shared by the table row and the mobile card rather than written twice, since two
+    copies of an icon set are two icon sets. The details glyph is its own `TaskInfoLink.vue`,
+    because the rack draws that one alone and a glyph drawn twice is a glyph that drifts.
+  - `.task-action` -- the control shape those icons wear, a 44px-tall target showing a 17px inline
+    SVG (the app has no icon set), faint until hovered, `--color-alarm` for delete and the accent
+    for the rest -- lives in `main.css` `@layer components`, not in a scoped block: two components
+    draw it now, and a control shape defined twice is a control shape that drifts.
+  - Every category head on the rack once carried a `+` key opening `/tasks/new?category=<id>`;
+    the registry has one `Nova` button and a category select in the form, so the query parameter
+    is now only what `TaskFormView` still honours. It checks the id against the loaded categories
+    first, since a select whose value matches no `<option>` renders blank, and only for a NEW
+    task, so it can never overwrite what an edited one points at.
 - **Weekday-pinned weekly tasks**: a `weekly` task may carry an optional `weekday`
   (`Weekday = 1..7`, **ISO-8601 Monday = 1**). Completion is still the ISO **week** key, so the
   weekday says only *when in the week the task is due* -- adding or changing one needs no migration

@@ -51,6 +51,34 @@ export const MONTH_NAMES = [
   'Dezembro',
 ]
 
+/** Three letters, for an axis label that has to repeat twelve times in a row. */
+export const MONTH_SHORT = [
+  'Jan',
+  'Fev',
+  'Mar',
+  'Abr',
+  'Mai',
+  'Jun',
+  'Jul',
+  'Ago',
+  'Set',
+  'Out',
+  'Nov',
+  'Dez',
+]
+
+/**
+ * What ONE period of each cadence is called, for a figure that counts them --
+ * a streak of 12 is 12 dias on a daily task and 12 semanas on a weekly one.
+ */
+export const PERIOD_NOUNS: Record<TaskFrequency, { one: string; many: string }> = {
+  once: { one: 'vez', many: 'vezes' },
+  daily: { one: 'dia', many: 'dias' },
+  weekly: { one: 'semana', many: 'semanas' },
+  monthly: { one: 'mes', many: 'meses' },
+  yearly: { one: 'ano', many: 'anos' },
+}
+
 const CURRENT_PERIOD_LABELS: Record<TaskFrequency, string> = {
   once: 'Concluida',
   daily: 'Hoje',
@@ -243,6 +271,107 @@ export function formatWeekRange(date: Date): string {
   const first = days[0]!
   const last = days[6]!
   return `${pad(first.getDate())}/${pad(first.getMonth() + 1)} - ${pad(last.getDate())}/${pad(last.getMonth() + 1)}`
+}
+
+/**
+ * `date` shifted by whole periods of `frequency`, at noon.
+ *
+ * Every case lands on a day that is guaranteed to exist, which is the whole
+ * point: stepping back one month from the 31st would otherwise roll FORWARD
+ * into the following month, and a chart walking twelve of those would skip
+ * February entirely. Only the resulting period matters, never the day inside
+ * it, so the first of the month and of the year are the safe representatives.
+ */
+export function addPeriods(frequency: TaskFrequency, date: Date, amount: number): Date {
+  switch (frequency) {
+    // No cadence, so no step: a one-off is its own only period.
+    case 'once':
+      return new Date(date)
+    case 'daily':
+      return new Date(date.getFullYear(), date.getMonth(), date.getDate() + amount, 12)
+    case 'weekly':
+      return addWeeks(date, amount)
+    case 'monthly':
+      return new Date(date.getFullYear(), date.getMonth() + amount, 1, 12)
+    case 'yearly':
+      return new Date(date.getFullYear() + amount, 0, 1, 12)
+  }
+}
+
+/**
+ * The Monday of the ISO week a `weekly` key names, or null for anything else.
+ *
+ * 4 January is in ISO week 1 by definition, whatever weekday it falls on, so
+ * it is the one fixed point every year has. Re-deriving the key IS the range
+ * check, the same trade `parseDailyKey` makes: most years have 52 weeks, and
+ * `2025-W53` names no week at all.
+ */
+export function parseWeekKey(key: string): Date | null {
+  if (!matchesFrequency('weekly', key)) return null
+  const [yearPart, weekPart] = key.split('-W')
+  const monday = weekStart(new Date(Number(yearPart), 0, 4, 12))
+  monday.setDate(monday.getDate() + (Number(weekPart) - 1) * 7)
+  return isoWeekKey(monday) === key ? monday : null
+}
+
+/** Whole days from the UTC epoch. UTC on purpose: it has no DST to absorb. */
+function utcDayNumber(date: Date): number {
+  return Math.round(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86_400_000)
+}
+
+/**
+ * A monotonic INDEX for the period a key names: two consecutive periods differ
+ * by exactly 1, and subtracting two indices counts the periods between them.
+ *
+ * This is what makes a streak arithmetic rather than a walk: keys are strings
+ * whose successor is not computable by hand (`2026-W52` is followed by
+ * `2026-W53` in some years and `2027-W01` in others), and a year is not a fixed
+ * number of weeks, so `year * 53 + week` is not linear.
+ *
+ * A one-off has no cadence and therefore no index. Null too for a key written
+ * under a frequency the task has since left: it is real work, but it cannot be
+ * placed on this cadence's number line.
+ */
+export function periodIndex(frequency: TaskFrequency, key: string): number | null {
+  if (!matchesFrequency(frequency, key)) return null
+  switch (frequency) {
+    case 'once':
+      return null
+    case 'daily': {
+      const day = parseDailyKey(key)
+      return day ? utcDayNumber(day) : null
+    }
+    case 'weekly': {
+      const monday = parseWeekKey(key)
+      // The epoch is a THURSDAY, so Mondays sit at 4 mod 7; without the offset
+      // the division would not land on an integer.
+      return monday ? (utcDayNumber(monday) - 4) / 7 : null
+    }
+    case 'monthly': {
+      const [year, month] = key.split('-').map(Number)
+      return year! * 12 + (month! - 1)
+    }
+    case 'yearly':
+      return Number(key)
+  }
+}
+
+/** The label one period wears on a chart axis, where there is room for four characters. */
+export function formatPeriodShort(frequency: TaskFrequency, key: string): string {
+  switch (frequency) {
+    case 'once':
+      return 'Unica'
+    case 'daily': {
+      const [, month, day] = key.split('-')
+      return `${day}/${month}`
+    }
+    case 'weekly':
+      return `W${key.split('-W')[1]}`
+    case 'monthly':
+      return MONTH_SHORT[Number(key.split('-')[1]) - 1] ?? key
+    case 'yearly':
+      return key
+  }
 }
 
 /** dd/mm/yyyy, the format the period selector shows. */

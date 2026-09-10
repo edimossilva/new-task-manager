@@ -1,6 +1,4 @@
-import { computed, type Ref } from 'vue'
 import type { Category, Task } from '@/entities'
-import { useCategoryStore } from '@/stores/category-store'
 
 /** Bucket id for tasks with no category, and for ones pointing at a missing one. */
 export const UNFILED = '__unfiled__'
@@ -15,8 +13,9 @@ export interface RackUnit {
 /**
  * Splits tasks into one unit per category, in name order, unfiled last.
  *
- * A plain function rather than only a composable, because the home page builds
- * one rack per frequency band and a composable cannot be called in a loop.
+ * A plain function rather than a composable: every caller builds several racks
+ * inside one computed -- one per frequency band on home, one per category on
+ * the summary -- and a composable cannot be called in a loop.
  *
  * The incoming order is preserved inside every unit, so whatever the caller
  * sorted by still holds row by row.
@@ -43,10 +42,4 @@ export function buildCategoryRack(tasks: Task[], categories: Category[]): RackUn
 
   const unfiled = grouped.get(UNFILED)
   return unfiled ? [...units, { key: UNFILED, tasks: unfiled }] : units
-}
-
-/** The reactive wrapper, for a page with one rack to build. */
-export function useCategoryRack(tasks: Ref<Task[]>) {
-  const categoryStore = useCategoryStore()
-  return computed(() => buildCategoryRack(tasks.value, categoryStore.categories))
 }

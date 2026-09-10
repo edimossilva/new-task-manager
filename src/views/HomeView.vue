@@ -154,8 +154,6 @@ const firstName = computed(() => authStore.user?.displayName?.split(' ')[0] ?? '
           :category="unit.category"
           :tasks="unit.tasks"
           :index="index"
-          compact
-          hide-frequency
         />
       </div>
     </section>

@@ -1,7 +1,13 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import type { CreateTaskInput, Task } from '@/entities'
-import type { CheckTally, CompletionPeriod, WeekSummary, WeekTrendPoint } from '@/usecases'
+import type {
+  CheckTally,
+  CompletionPeriod,
+  TaskInsight,
+  WeekSummary,
+  WeekTrendPoint,
+} from '@/usecases'
 import { TaskUseCases } from '@/usecases'
 import { getTaskRepository } from '@/adapters/repositories'
 import { useNotificationStore } from './notification-store'
@@ -38,8 +44,13 @@ export const useTaskStore = defineStore('task', () => {
     return createUseCases().weekSummary(tasks, referenceDate)
   }
 
-  function weekTrend(tasks: Task[], referenceDate: Date): WeekTrendPoint[] {
-    return createUseCases().weekTrend(tasks, referenceDate)
+  function weekTrend(tasks: Task[], referenceDate: Date, weeks?: number): WeekTrendPoint[] {
+    return createUseCases().weekTrend(tasks, referenceDate, weeks)
+  }
+
+  /** Everything the task's own page reads about its past, in one pass. */
+  function taskInsight(task: Task): TaskInsight {
+    return createUseCases().taskInsight(task)
   }
 
   function completionHistory(task: Task): CompletionPeriod[] {
@@ -135,6 +146,7 @@ export const useTaskStore = defineStore('task', () => {
     weekSummary,
     weekTrend,
     completionHistory,
+    taskInsight,
     isDueOn,
     isLateOn,
     create,

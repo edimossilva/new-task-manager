@@ -1,15 +1,19 @@
 import type { Completion, CreateTaskInput, Task, TaskFrequency } from '@/entities'
 import {
   FREQUENCIES,
+  addPeriods,
   addWeeks,
   createTask,
+  formatPeriodShort,
   formatWeekShort,
   isoWeekKey,
   isoWeekday,
   matchesFrequency,
   parseDailyKey,
+  periodIndex,
   periodKey,
   weekDates,
+  weekStart,
 } from '@/entities'
 import type { TaskRepository } from './ports'
 import { validateRequiredText, validateTimesPerPeriod } from './validation'
@@ -109,6 +113,86 @@ export interface WeekTrendPoint {
 
 /** Weeks the trend strip carries, the focused one included. */
 const TREND_WEEKS = 8
+
+/** One period on the task's own run chart. */
+export interface PeriodPoint {
+  key: string
+  /** Four characters at most: `01/09`, `W37`, `Set`, `2026`. */
+  label: string
+  count: number
+  target: number
+  /** The period the clock is in. Still running, so short of target is not a miss. */
+  isCurrent: boolean
+  /** The task already existed. Periods before that are blank, never shortfalls. */
+  existed: boolean
+}
+
+/** One day of the daily heatmap. */
+export interface HeatCell {
+  key: string
+  date: Date
+  count: number
+  target: number
+  existed: boolean
+  isFuture: boolean
+}
+
+/**
+ * Everything the task's own page reads about its past, in ONE pass over its
+ * check-offs.
+ *
+ * Figures that count PERIODS only count the ones written under the task's
+ * current frequency, the rule `completionHistory`'s callers already live by: a
+ * key left behind by a frequency change is real work under a cadence the task
+ * has left, and it cannot be placed on this one's number line.
+ */
+export interface TaskInsight {
+  /** Every check-off, whatever format its key is in. */
+  total: number
+  /** The part of it written under the CURRENT frequency -- what the figures measure. */
+  counted: number
+  /** Periods that reached their target. */
+  periodsDone: number
+  /** Periods the task has existed through, the running one included. */
+  periodsElapsed: number
+  /** `periodsDone / periodsElapsed`, rounded the way every meter in the app rounds. */
+  rate: number
+  /**
+   * Completed periods in an unbroken run ending now. The RUNNING period does
+   * not break it while it is still open -- a daily streak must not read zero
+   * every morning until the box is ticked.
+   */
+  streak: number
+  /** The longest such run the task has ever had, the current one included. */
+  bestStreak: number
+  /** The most recent recorded moment, absent when no check-off carries one. */
+  lastAt?: Date
+  /** Whole days between that moment's day and today. */
+  daysSince?: number
+  /** The last N periods, oldest first. Empty for a one-off, which has one period. */
+  timeline: PeriodPoint[]
+  /** The last `HEAT_WEEKS` weeks as days, column by column. Daily tasks only. */
+  heat: HeatCell[]
+  /** Check-offs per weekday, Monday first. Anything that pins to a day. */
+  byWeekday: number[]
+  /** Check-offs per hour, 0..23. Only the ones carrying a moment can say. */
+  byHour: number[]
+  /** How many carry a moment -- the hour dial's own denominator. */
+  dated: number
+}
+
+/** How far back the run chart reaches, per cadence. */
+const TIMELINE_PERIODS: Record<TaskFrequency, number> = {
+  // A one-off has one period and it is the current one; a chart of it is a dot.
+  once: 0,
+  daily: 14,
+  weekly: 12,
+  monthly: 12,
+  yearly: 8,
+}
+
+/** Weeks in the daily heatmap: a season, and 18 columns still fit a phone. */
+const HEAT_WEEKS = 18
 
 /** One period's worth of check-offs, as `completionHistory` reports it. */
 export interface CompletionPeriod {
@@ -667,6 +751,188 @@ export class TaskUseCases {
         latest: Math.max(0, ...entries.map((entry) => entry.at?.getTime() ?? 0)),
       }))
       .sort((a, b) => b.latest - a.latest || (a.key < b.key ? 1 : a.key > b.key ? -1 : 0))
+  }
+
+  /**
+   * The whole reading of one task's past: streaks, adherence, the run chart,
+   * the heatmap and the two rhythms.
+   *
+   * It lives here for the reason `completionHistory` does -- "which period is
+   * this check-off part of" is the completion model's own question -- and it is
+   * ONE method rather than six because all six answers come from the same pass
+   * over `completions`, which can hold `MAX_COMPLETIONS` entries.
+   */
+  taskInsight(task: Task, now: Date = new Date()): TaskInsight {
+    const target = task.timesPerPeriod
+
+    // Every key, then the subset this cadence can actually measure.
+    const counts = new Map<string, number>()
+    const byWeekday = [0, 0, 0, 0, 0, 0, 0]
+    const byHour = Array.from({ length: 24 }, () => 0)
+    let dated = 0
+    let lastAt: Date | undefined
+
+    for (const completion of task.completions) {
+      counts.set(completion.key, (counts.get(completion.key) ?? 0) + 1)
+
+      if (completion.at) {
+        dated += 1
+        const hour = completion.at.getHours()
+        byHour[hour] = (byHour[hour] ?? 0) + 1
+        if (!lastAt || completion.at > lastAt) lastAt = completion.at
+      }
+      // A weekday is the coarser question, so a dateless daily key can still
+      // answer it -- the same fallback order `placeCompletion` uses.
+      const day = this.completionDay(completion)
+      if (day) {
+        const weekday = isoWeekday(day) - 1
+        byWeekday[weekday] = (byWeekday[weekday] ?? 0) + 1
+      }
+    }
+
+    let counted = 0
+    const doneIndices = new Set<number>()
+    for (const [key, count] of counts) {
+      if (!matchesFrequency(task.frequency, key)) continue
+      counted += count
+      if (count < target) continue
+      const index = periodIndex(task.frequency, key)
+      if (index !== null) doneIndices.add(index)
+    }
+
+    const nowIndex = periodIndex(task.frequency, periodKey(task.frequency, now))
+    const createdIndex = periodIndex(task.frequency, periodKey(task.frequency, task.createdAt))
+    const periodsElapsed =
+      nowIndex !== null && createdIndex !== null ? Math.max(1, nowIndex - createdIndex + 1) : 1
+
+    /*
+     * A one-off has no index and so lands in no `doneIndices`, but it does have
+     * a period and it can be finished: without this a completed one-off would
+     * read 0% kept, which is the opposite of the truth.
+     */
+    const periodsDone =
+      task.frequency === 'once' ? ((counts.get('once') ?? 0) >= target ? 1 : 0) : doneIndices.size
+
+    return {
+      total: task.completions.length,
+      counted,
+      periodsDone,
+      periodsElapsed,
+      rate: percentOf({ done: Math.min(periodsDone, periodsElapsed), total: periodsElapsed }),
+      streak: this.currentStreak(doneIndices, nowIndex),
+      bestStreak: this.bestStreak(doneIndices),
+      lastAt,
+      daysSince: lastAt ? this.daysBetween(lastAt, now) : undefined,
+      timeline: this.timeline(task, counts, now),
+      heat: task.frequency === 'daily' ? this.heatmap(task, counts, now) : [],
+      byWeekday,
+      byHour,
+      dated,
+    }
+  }
+
+  /**
+   * Completed periods in an unbroken run ending at the present one.
+   *
+   * The running period is skipped rather than counted as a miss when it is not
+   * done yet: a task that has been kept for forty days must not read zero every
+   * morning until the box is ticked. Once it IS ticked the run includes it, so
+   * the figure only ever grows on the day.
+   */
+  private currentStreak(doneIndices: Set<number>, nowIndex: number | null): number {
+    if (nowIndex === null) return 0
+    let cursor = doneIndices.has(nowIndex) ? nowIndex : nowIndex - 1
+    let streak = 0
+    while (doneIndices.has(cursor)) {
+      streak += 1
+      cursor -= 1
+    }
+    return streak
+  }
+
+  /**
+   * The longest run of consecutive completed periods.
+   *
+   * Consecutive is an arithmetic question here, not a calendar one, which is
+   * the whole reason `periodIndex` exists: `2026-W52` is followed by `2026-W53`
+   * in some years and `2027-W01` in others.
+   */
+  private bestStreak(doneIndices: Set<number>): number {
+    let best = 0
+    let run = 0
+    let previous: number | undefined
+    for (const index of [...doneIndices].sort((a, b) => a - b)) {
+      run = previous !== undefined && index === previous + 1 ? run + 1 : 1
+      if (run > best) best = run
+      previous = index
+    }
+    return best
+  }
+
+  /** Whole days between two moments, by calendar day rather than by clock. */
+  private daysBetween(from: Date, to: Date): number {
+    const fromIndex = periodIndex('daily', periodKey('daily', from))!
+    const toIndex = periodIndex('daily', periodKey('daily', to))!
+    return toIndex - fromIndex
+  }
+
+  /**
+   * The last N periods of the task's own cadence, oldest first, so the chart
+   * reads left to right into the present.
+   *
+   * Walked as DATES rather than by decrementing an index, because a key cannot
+   * be built from an index -- `addPeriods` is what knows that stepping back a
+   * month from the 31st must not land in the wrong one.
+   */
+  private timeline(task: Task, counts: Map<string, number>, now: Date): PeriodPoint[] {
+    const span = TIMELINE_PERIODS[task.frequency]
+    if (span === 0) return []
+
+    const currentKey = periodKey(task.frequency, now)
+    const createdKey = periodKey(task.frequency, task.createdAt)
+
+    return Array.from({ length: span }, (_, index) => {
+      const key = periodKey(task.frequency, addPeriods(task.frequency, now, index - (span - 1)))
+      return {
+        key,
+        label: formatPeriodShort(task.frequency, key),
+        count: counts.get(key) ?? 0,
+        target: task.timesPerPeriod,
+        isCurrent: key === currentKey,
+        // One format, so a string comparison is a chronological one.
+        existed: createdKey <= key,
+      }
+    })
+  }
+
+  /**
+   * `HEAT_WEEKS` weeks of days, ordered COLUMN BY COLUMN -- a week per column,
+   * Monday at the top -- because that is the order a CSS grid flowing down its
+   * rows will lay them out.
+   *
+   * Daily tasks only: for any other cadence every cell in a column but one
+   * would be blank, which reads as a task nobody keeps rather than as a
+   * cadence that does not visit every day.
+   */
+  private heatmap(task: Task, counts: Map<string, number>, now: Date): HeatCell[] {
+    const firstMonday = addWeeks(weekStart(now), -(HEAT_WEEKS - 1))
+    const todayKey = periodKey('daily', now)
+    const createdKey = periodKey('daily', task.createdAt)
+
+    return Array.from({ length: HEAT_WEEKS * 7 }, (_, index) => {
+      const date = new Date(firstMonday)
+      date.setDate(firstMonday.getDate() + index)
+      const key = periodKey('daily', date)
+      return {
+        key,
+        date,
+        count: counts.get(key) ?? 0,
+        target: task.timesPerPeriod,
+        existed: createdKey <= key,
+        // The current week runs past today; those cells are not misses.
+        isFuture: key > todayKey,
+      }
+    })
   }
 
   /**

@@ -50,6 +50,11 @@ const router = createRouter({
       component: () => import('@/views/categories/CategoryFormView.vue'),
     },
     {
+      path: '/categories/:id',
+      name: 'category-detail',
+      component: () => import('@/views/categories/CategoryDetailView.vue'),
+    },
+    {
       path: '/categories/:id/edit',
       name: 'category-edit',
       component: () => import('@/views/categories/CategoryFormView.vue'),

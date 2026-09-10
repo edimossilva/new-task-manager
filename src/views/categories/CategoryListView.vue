@@ -5,6 +5,7 @@ import { useTaskStore } from '@/stores/task-store'
 import { useSortable } from '@/composables/use-sortable'
 import CategoryBadge from '@/components/CategoryBadge.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import CategoryInfoLink from '@/components/CategoryInfoLink.vue'
 
 const store = useCategoryStore()
 const taskStore = useTaskStore()
@@ -44,7 +45,9 @@ function handleDelete() {
   <ul v-if="sortedItems.length" class="md:hidden">
     <li v-for="category in sortedItems" :key="category.id" class="card">
       <div class="min-w-0 flex-1">
-        <CategoryBadge :category="category" />
+        <RouterLink :to="`/categories/${category.id}`" class="card-link">
+          <CategoryBadge :category="category" />
+        </RouterLink>
         <p v-if="category.description" class="card-desc">{{ category.description }}</p>
         <p class="card-meta figure">
           {{ store.countTasks(category.id) }}
@@ -72,11 +75,16 @@ function handleDelete() {
       </thead>
       <tbody>
         <tr v-for="category in sortedItems" :key="category.id">
-          <td><CategoryBadge :category="category" /></td>
+          <td>
+            <RouterLink :to="`/categories/${category.id}`" class="card-link">
+              <CategoryBadge :category="category" />
+            </RouterLink>
+          </td>
           <td class="text-fg-faint">{{ category.description || '-' }}</td>
           <td class="figure">{{ store.countTasks(category.id) }}</td>
           <td>
             <div class="actions">
+              <CategoryInfoLink :category="category" class="-my-2" />
               <RouterLink :to="`/categories/${category.id}/edit`" class="btn-link">
                 Editar
               </RouterLink>
@@ -109,6 +117,11 @@ function handleDelete() {
 .card {
   @apply flex items-start gap-3 px-3.5 py-3 mb-2 bg-panel
          border border-line-strong rounded-sm;
+}
+
+/* The badge is the way into the category's own page. */
+.card-link {
+  @apply inline-block no-underline;
 }
 
 .card-desc {

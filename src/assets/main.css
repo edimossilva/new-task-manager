@@ -474,6 +474,49 @@
     @apply flex items-center gap-1;
   }
 
+  /*
+   * A ROW action: one control shape for every icon that repeats down a list of
+   * tasks -- a 44px-tall target showing a 17px glyph, so the row reads as
+   * content with affordances rather than as a toolbar. Global rather than
+   * scoped because two components draw these now (`TaskRowActions` on the
+   * registry, `TaskInfoLink` wherever a row only needs the way in), and a
+   * control shape defined twice is a control shape that drifts.
+   */
+  .task-action {
+    @apply inline-flex items-center justify-center w-8 min-h-11 shrink-0 bg-transparent
+           border-none cursor-pointer text-fg-faint transition-colors duration-[140ms];
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .task-action svg {
+    @apply w-[17px] h-[17px];
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .task-action svg .solid {
+    fill: currentColor;
+    stroke: none;
+  }
+
+  .task-action:hover,
+  .task-action:focus-visible {
+    @apply outline-none text-accent-text;
+  }
+
+  /* Off the routine: the key that brings it back is the one thing lit. */
+  .task-action.lit {
+    @apply text-accent-text;
+  }
+
+  .task-action.danger:hover,
+  .task-action.danger:focus-visible {
+    color: var(--color-alarm);
+  }
+
   .form-group {
     @apply mb-5;
   }
