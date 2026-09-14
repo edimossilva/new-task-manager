@@ -10,6 +10,8 @@ import {
   formatDateTime,
   formatPeriodLabel,
   periodKey,
+  turnPlan,
+  turnSlots,
 } from '@/entities'
 import { useTaskStore } from '@/stores/task-store'
 import { useCategoryStore } from '@/stores/category-store'
@@ -17,6 +19,7 @@ import { usePeriodSelection } from '@/composables/use-period-selection'
 import CategoryBadge from '@/components/CategoryBadge.vue'
 import FrequencyBadge from '@/components/FrequencyBadge.vue'
 import WeekdayBadge from '@/components/WeekdayBadge.vue'
+import TurnBadge from '@/components/TurnBadge.vue'
 import TaskStamp from '@/components/TaskStamp.vue'
 import CompletionGauge from '@/components/CompletionGauge.vue'
 import TaskRunChart from '@/components/TaskRunChart.vue'
@@ -72,6 +75,16 @@ const inkVars = computed(() => {
 
 const count = computed(() =>
   task.value ? store.completionCountFor(task.value, referenceDate.value) : 0,
+)
+
+/** The page can now say what Hoje says: a deadline inside the period has passed. */
+const isLate = computed(() =>
+  task.value ? store.isLateOn(task.value, referenceDate.value, today.value) : false,
+)
+
+/** The turns whose deadline has passed with the slot still open, for the chips. */
+const lateTurnSet = computed(
+  () => new Set(task.value ? store.lateTurns(task.value, referenceDate.value, today.value) : []),
 )
 
 /**
@@ -178,9 +191,17 @@ function toggleActive() {
       <div class="plate-body">
         <div class="flex flex-wrap items-center gap-2">
           <span v-if="!task.active" class="chip off">Inativa</span>
+          <span v-else-if="isLate" class="chip late">Atrasada</span>
           <CategoryBadge v-if="category" :category="category" />
           <FrequencyBadge :frequency="task.frequency" />
           <WeekdayBadge v-if="task.weekday" :weekday="task.weekday" />
+          <TurnBadge
+            v-for="group in turnPlan(task.turns, task.timesPerPeriod).groups"
+            :key="group.turn"
+            :turn="group.turn"
+            :count="group.count"
+            :late="lateTurnSet.has(group.turn)"
+          />
           <span v-if="task.timesPerPeriod > 1" class="chip figure">
             {{ TIMES_PER_PERIOD_LABELS[task.frequency].toLowerCase() }}: {{ task.timesPerPeriod }}
           </span>
@@ -196,6 +217,7 @@ function toggleActive() {
             :count="count"
             :period-label="formatDate(referenceDate)"
             :disabled="!task.active"
+            :late="isLate"
             @advance="advance"
           />
           <div class="min-w-0 flex-1">
@@ -204,6 +226,8 @@ function toggleActive() {
               v-if="task.timesPerPeriod > 1"
               :count="count"
               :total="task.timesPerPeriod"
+              :slots="turnSlots(task.turns, task.timesPerPeriod)"
+              :due="store.dueByNow(task, referenceDate, today)"
               class="mt-1"
               @set="(value) => store.setCompletionCount(task!.id, value, referenceDate)"
               @undo="store.undoCompletion(task!.id, referenceDate)"
@@ -426,6 +450,12 @@ function toggleActive() {
 
 .chip.off {
   @apply text-fg-faint;
+}
+
+/* The same fault colour the rack row wears, so one state has one voice. */
+.chip.late {
+  @apply text-void border-transparent;
+  background: var(--color-alarm);
 }
 
 .desc {

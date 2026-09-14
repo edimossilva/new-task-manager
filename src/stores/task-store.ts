@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
-import type { CreateTaskInput, Task } from '@/entities'
+import type { CreateTaskInput, Task, Turn } from '@/entities'
 import type {
   CheckTally,
   CompletionPeriod,
@@ -61,8 +61,21 @@ export const useTaskStore = defineStore('task', () => {
     return createUseCases().isDueOn(task, referenceDate)
   }
 
-  function isLateOn(task: Task, referenceDate: Date): boolean {
-    return createUseCases().isLateOn(task, referenceDate)
+  /**
+   * `now` is passed explicitly rather than defaulted, so a view that has pinned
+   * a day -- whose `referenceDate` deliberately does not subscribe to the clock
+   * -- still re-reads when a turn boundary passes.
+   */
+  function isLateOn(task: Task, referenceDate: Date, now?: Date): boolean {
+    return createUseCases().isLateOn(task, referenceDate, now)
+  }
+
+  function dueByNow(task: Task, referenceDate: Date, now?: Date): number {
+    return createUseCases().dueByNow(task, referenceDate, now)
+  }
+
+  function lateTurns(task: Task, referenceDate: Date, now?: Date): Turn[] {
+    return createUseCases().lateTurns(task, referenceDate, now)
   }
 
   function create(input: CreateTaskInput): boolean {
@@ -149,6 +162,8 @@ export const useTaskStore = defineStore('task', () => {
     taskInsight,
     isDueOn,
     isLateOn,
+    dueByNow,
+    lateTurns,
     create,
     update,
     setActive,

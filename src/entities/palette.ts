@@ -5,8 +5,10 @@
  * Every ink carries three values because the same colour is asked to do three
  * different jobs, and one hex cannot do all of them:
  *
- * - `base` -- fills that carry paper-coloured text on top (progress meter, the
- *   Atrasada tag). Saturated.
+ * - `base` -- fills that carry paper-coloured text on top (progress meters, the
+ *   rack unit's rail). Saturated. NOT for fault states: those speak in
+ *   `--color-alarm`, which no ink here can stand in for -- an accent the user
+ *   picked for delight would have `Atrasada` reading as a commendation.
  * - `deep`   -- the ink as TEXT on a LIGHT ground. Darkened to stay legible: a
  *   light amber at base strength is unreadable at 11px on white.
  * - `bright` -- the ink as TEXT on a DARK ground. Lightened, because darkening

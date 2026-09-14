@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import type { Category, Task } from '@/entities'
-import { FREQUENCY_LABELS, FREQUENCY_ORDER, INKS, formatDateTime } from '@/entities'
+import { FREQUENCY_LABELS, FREQUENCY_ORDER, INKS, formatDateTime, turnPlan } from '@/entities'
 import type { PeriodPoint, TaskInsight } from '@/usecases'
 import { percentOf } from '@/usecases'
 import { useTaskStore } from '@/stores/task-store'
@@ -10,6 +10,7 @@ import { useCategoryStore } from '@/stores/category-store'
 import { usePeriodSelection } from '@/composables/use-period-selection'
 import FrequencyBadge from '@/components/FrequencyBadge.vue'
 import WeekdayBadge from '@/components/WeekdayBadge.vue'
+import TurnBadge from '@/components/TurnBadge.vue'
 import TaskInfoLink from '@/components/TaskInfoLink.vue'
 import TaskRunChart from '@/components/TaskRunChart.vue'
 
@@ -312,6 +313,12 @@ function sinceLabel(insight: TaskInsight): string {
               </RouterLink>
               <FrequencyBadge :frequency="row.task.frequency" />
               <WeekdayBadge v-if="row.task.weekday" :weekday="row.task.weekday" />
+              <TurnBadge
+                v-for="group in turnPlan(row.task.turns, row.task.timesPerPeriod).groups"
+                :key="group.turn"
+                :turn="group.turn"
+                :count="group.count"
+              />
               <span v-if="!row.task.active" class="roll-off">Inativa</span>
             </div>
 

@@ -14,7 +14,7 @@ import PeriodSelector from '@/components/PeriodSelector.vue'
 const authStore = useAuthStore()
 const store = useTaskStore()
 const categoryStore = useCategoryStore()
-const { referenceDate, isToday } = usePeriodSelection()
+const { referenceDate, today, isToday } = usePeriodSelection()
 
 onMounted(() => {
   store.loadAll()
@@ -32,10 +32,27 @@ const visibleTasks = computed(() =>
   store.tasks.filter((task) => task.active && store.isDueOn(task, referenceDate.value)),
 )
 
+/**
+ * The overdue set, resolved ONCE per render. `isLateOn` walks a task's
+ * check-offs, and the sort below calls its comparator O(n log n) times -- asking
+ * the question inside it would re-walk the same completions on every comparison.
+ *
+ * `today` is the clock rather than `referenceDate`, so a turn passing re-sorts
+ * the band on the tick even with a day pinned. See `CategoryTaskCard`.
+ */
+const lateIds = computed(
+  () =>
+    new Set(
+      visibleTasks.value
+        .filter((task) => store.isLateOn(task, referenceDate.value, today.value))
+        .map((task) => task.id),
+    ),
+)
+
 /** Atrasada, then pending, then done -- the same order the tasks page defaults to. */
 function statusRank(task: Task): number {
   if (isCompleted(task)) return 2
-  return store.isLateOn(task, referenceDate.value) ? 0 : 1
+  return lateIds.value.has(task.id) ? 0 : 1
 }
 
 /**
@@ -73,6 +90,9 @@ const bands = computed(() =>
       // one of eight on eight tasks are the same percentage and not the same day.
       tasks: { done: tasks.filter(isCompleted).length, total: tasks.length },
       hasRepeats: tasks.some((task) => task.timesPerPeriod > 1),
+      // Which horizon is actually in trouble: a count in the band head says it
+      // where the gauge above can only say how much is left.
+      late: tasks.filter((task) => lateIds.value.has(task.id)).length,
       // The rule takes the frequency's own ink, then burns off.
       ink: { '--band-ink': `var(--color-freq-${frequency})` },
       rack: buildCategoryRack(tasks, categoryStore.categories),
@@ -81,6 +101,8 @@ const bands = computed(() =>
 )
 
 const firstName = computed(() => authStore.user?.displayName?.split(' ')[0] ?? '')
+
+const lateCount = computed(() => lateIds.value.size)
 </script>
 
 <template>
@@ -94,6 +116,26 @@ const firstName = computed(() => authStore.user?.displayName?.split(' ')[0] ?? '
 
   <template v-if="store.tasks.length">
     <PeriodSelector />
+
+    <!--
+      The master annunciator. A panel reports a fault twice -- once at the top,
+      where it is seen before anything is read, and once on the offending row.
+      This is the first half, and it is drawn in the app's own hatch, coarsened
+      from the meters' 3px scale pitch to a 6px hazard pitch so it reads as a
+      warning rather than as another gauge. Dropped entirely when nothing is
+      late: an annunciator that is always lit annunciates nothing.
+    -->
+    <Transition name="annunciator">
+      <section v-if="lateCount" class="annunciator" role="status">
+        <span class="annunciator-lamp" aria-hidden="true"></span>
+        <p class="annunciator-text">
+          <span class="annunciator-count figure">{{ lateCount }}</span>
+          {{ lateCount === 1 ? 'tarefa atrasada' : 'tarefas atrasadas' }}
+        </p>
+        <!-- Decorative, and the first thing to go when the line gets tight. -->
+        <span class="annunciator-note figure" aria-hidden="true">prazo vencido</span>
+      </section>
+    </Transition>
 
     <!--
       A gauge cluster, one per horizon, instead of a single figure for the day:
@@ -142,6 +184,11 @@ const firstName = computed(() => authStore.user?.displayName?.split(' ')[0] ?? '
       <div class="band-head">
         <h2 class="band-name">{{ band.label }}</h2>
         <span class="band-rule" aria-hidden="true"></span>
+        <!-- Which horizon is in trouble, before the cards under it are read. -->
+        <span v-if="band.late" class="band-late figure">
+          {{ band.late }}
+          <span class="sr-only">{{ band.late === 1 ? 'atrasada' : 'atrasadas' }}</span>
+        </span>
         <!-- Check-offs, the same scale as the band's own gauge above. -->
         <span class="band-count figure">
           {{ band.done }}<span class="band-slash">/</span>{{ band.total }}
@@ -170,6 +217,73 @@ const firstName = computed(() => authStore.user?.displayName?.split(' ')[0] ?? '
 
 .eyebrow {
   @apply font-mono text-[0.625rem] font-medium uppercase tracking-[0.16em] text-accent-text mb-1;
+}
+
+/*
+ * The annunciator. Alarm on alarm-dim, hatched at a 6/12px hazard pitch -- the
+ * same 45-degree gradient every meter in the app draws, coarsened so the two
+ * cannot be confused. The lamp pings rather than blinks: a hard flash on a page
+ * you look at every morning is punishment, a slow pulse is a panel breathing.
+ */
+.annunciator {
+  @apply flex items-center gap-2.5 mt-3 mb-2.5 px-3 py-2 border rounded-sm;
+  color: var(--color-alarm);
+  border-color: var(--color-alarm);
+  background-color: var(--color-alarm-dim);
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent 0 6px,
+    color-mix(in srgb, var(--color-alarm) 13%, transparent) 6px 12px
+  );
+}
+
+.annunciator-lamp {
+  @apply w-2 h-2 shrink-0 rounded-full;
+  background: var(--color-alarm);
+  animation: annunciate 2.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.annunciator-text {
+  @apply flex items-baseline gap-1.5 flex-1 min-w-0
+         font-mono text-[0.6875rem] font-semibold uppercase tracking-[0.14em] truncate;
+}
+
+/*
+ * The figure carries the weight. Lit, this is the most urgent thing on the page,
+ * and it was reading quieter than the gauges under it.
+ */
+.annunciator-count {
+  @apply shrink-0 text-[1.125rem] leading-none font-semibold tracking-normal;
+}
+
+.annunciator-note {
+  @apply hidden sm:inline shrink-0 text-[0.625rem] uppercase tracking-[0.1em] opacity-70;
+}
+
+/* Slides down from under the selector, the way a lamp lights rather than appears. */
+.annunciator-enter-active,
+.annunciator-leave-active {
+  transition:
+    opacity 260ms ease,
+    transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.annunciator-enter-from,
+.annunciator-leave-to {
+  @apply opacity-0;
+  transform: translateY(-6px);
+}
+
+@keyframes annunciate {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-alarm) 60%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 7px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
 }
 
 /* Gauges size themselves and wrap: one horizon or five, the cluster still reads. */
@@ -240,6 +354,14 @@ const firstName = computed(() => authStore.user?.displayName?.split(' ')[0] ?? '
 
 .band-count {
   @apply shrink-0 text-[0.75rem] text-fg-soft;
+}
+
+/* The stratum's own fault lamp, sized to sit beside the count without moving it. */
+.band-late {
+  @apply shrink-0 px-1.5 py-0.5 text-[0.6875rem] font-medium leading-none rounded-[2px];
+  color: var(--color-alarm);
+  border: 1px solid var(--color-alarm);
+  background: var(--color-alarm-dim);
 }
 
 .band-slash {

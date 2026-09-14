@@ -1,6 +1,7 @@
-import type { Completion, CreateTaskInput, Task, TaskFrequency } from '@/entities'
+import type { Completion, CreateTaskInput, Task, TaskFrequency, Turn } from '@/entities'
 import {
   FREQUENCIES,
+  TURNS,
   addPeriods,
   addWeeks,
   createTask,
@@ -9,14 +10,16 @@ import {
   isoWeekKey,
   isoWeekday,
   matchesFrequency,
+  normalizeTurns,
   parseDailyKey,
   periodIndex,
   periodKey,
+  turnOf,
   weekDates,
   weekStart,
 } from '@/entities'
 import type { TaskRepository } from './ports'
-import { validateRequiredText, validateTimesPerPeriod } from './validation'
+import { validateRequiredText, validateTimesPerPeriod, validateTurns } from './validation'
 
 export interface UseCaseResult {
   success: boolean
@@ -228,9 +231,12 @@ export class TaskUseCases {
   }
 
   create(input: CreateTaskInput): UseCaseResult {
+    // The turn check runs after the target's, so a cleared number input cannot
+    // produce a message about turns adding up against a NaN.
     const error =
       validateRequiredText(input.title, 'Titulo') ??
-      validateTimesPerPeriod(input.timesPerPeriod ?? 1)
+      validateTimesPerPeriod(input.timesPerPeriod ?? 1) ??
+      validateTurns(input.turns ?? [], input.timesPerPeriod ?? 1)
     if (error) return { success: false, error }
 
     this.taskRepo.create(
@@ -238,6 +244,7 @@ export class TaskUseCases {
         ...input,
         title: input.title.trim(),
         weekday: input.frequency === 'weekly' ? input.weekday : undefined,
+        turns: input.frequency === 'daily' ? input.turns : [],
       }),
     )
     return { success: true }
@@ -245,7 +252,9 @@ export class TaskUseCases {
 
   update(task: Task): UseCaseResult {
     const error =
-      validateRequiredText(task.title, 'Titulo') ?? validateTimesPerPeriod(task.timesPerPeriod)
+      validateRequiredText(task.title, 'Titulo') ??
+      validateTimesPerPeriod(task.timesPerPeriod) ??
+      validateTurns(task.turns, task.timesPerPeriod)
     if (error) return { success: false, error }
 
     // Changing the frequency leaves the old period keys in place. They can never
@@ -254,11 +263,15 @@ export class TaskUseCases {
     //
     // The weekday is different: a stale one would silently hide the task if the
     // frequency ever came back to weekly, so the invariant "weekday set implies
-    // weekly" is enforced here rather than trusted to the form.
+    // weekly" is enforced here rather than trusted to the form. The turn plan
+    // reads the same way, and is re-normalized rather than merely coerced: a
+    // lowered `timesPerPeriod` must truncate it, or the surplus slots would ask
+    // for check-offs the period can no longer hold and read Atrasada forever.
     this.taskRepo.update({
       ...task,
       title: task.title.trim(),
       weekday: task.frequency === 'weekly' ? task.weekday : undefined,
+      turns: normalizeTurns(task.frequency === 'daily' ? task.turns : [], task.timesPerPeriod),
       updatedAt: new Date(),
     })
     return { success: true }
@@ -973,18 +986,96 @@ export class TaskUseCases {
   }
 
   /**
-   * Past its weekday within the same week and still not done, so it can still be
-   * caught up. Note a Sunday task can never be late -- there is no day after
-   * Sunday in an ISO week.
+   * How many of the task's turn-pinned check-offs the day has already asked for.
+   *
+   * A turn is asked of only once it is fully OVER, so a Noite slot is never late
+   * on its own day -- the same shape as a Sunday task never being late inside its
+   * own ISO week. Turns are deadlines INSIDE the period, never part of it: the
+   * completion key is untouched, exactly as the weekday never enters it.
+   *
+   * `turnOf` is applied to `now` and to `createdAt`, NEVER to `referenceDate`,
+   * which is built at noon when a day is pinned (`use-period-selection.ts`) and
+   * would report the same turn for every browsed day. Which day we are on is a
+   * key comparison; what time it is inside that day only the real clock can say.
+   *
+   * Reads no completions, which is what keeps it cheap on the home page's hot
+   * path -- the caller already holds the count.
    */
-  isLateOn(task: Task, referenceDate: Date = new Date()): boolean {
+  dueByNow(task: Task, referenceDate: Date = new Date(), now: Date = new Date()): number {
+    // Gated on the frequency as well as the plan, the way `appearsOn` is: a
+    // hand-edited document carrying turns on a weekly task still behaves.
+    if (task.frequency !== 'daily' || task.turns.length === 0) return 0
+
+    const refKey = periodKey('daily', referenceDate)
+    const todayKey = periodKey('daily', now)
+    // 'Atrasada' is a claim about the past; a day that has not happened asks for
+    // nothing. Also keeps the gauge from painting alarm cells while browsing on.
+    if (refKey > todayKey) return 0
+
+    const createdKey = periodKey('daily', task.createdAt)
+    if (createdKey > refKey) return 0
+
+    // A day already over has no turn left to run, so all three were asked for.
+    const passed = refKey < todayKey ? TURNS.length : turnOf(now) - 1
+
+    // `existsIn` is day-granular for a daily task, so one created tonight
+    // "existed" all day and its Manha slot would be born overdue. The same guard
+    // `isLateOn` carries for the weekday, one cadence finer.
+    const floor = createdKey === refKey ? turnOf(task.createdAt) : 1
+
+    // Order-independent: an unsorted plan cannot produce a wrong figure here, so
+    // nothing has to re-sort defensively on read.
+    const due = task.turns.filter((turn) => turn >= floor && turn <= passed).length
+
+    // A plan longer than the target can only come from a document written before
+    // a lowered `timesPerPeriod` reached it. Unclamped it would ask for more
+    // check-offs than the period can hold, and read Atrasada forever.
+    return Math.min(due, task.timesPerPeriod)
+  }
+
+  /**
+   * The turns of the slots already asked for and still unfilled -- what the row
+   * needs to say WHICH turn it missed, where `Atrasada` says only that it did.
+   *
+   * A slice, because slots are sorted and crediting is positional: the first
+   * `count` of them are the ones the day's check-offs have filled.
+   */
+  lateTurns(task: Task, referenceDate: Date = new Date(), now: Date = new Date()): Turn[] {
+    const count = this.completionCountFor(task, referenceDate)
+    return task.turns.slice(count, this.dueByNow(task, referenceDate, now))
+  }
+
+  /**
+   * Late means the period is not finished and a deadline inside it has already
+   * passed. Two rules can say that and they are ORed rather than chained: a
+   * weekly task is late by its weekday, a daily one by its turns, and no task is
+   * ever both (turns imply daily, weekday implies weekly).
+   *
+   * The two gates are hoisted because they are claims about the whole predicate
+   * rather than about either rule. The count is taken once and reused -- a task
+   * can hold `MAX_COMPLETIONS` entries and this runs per row, per render.
+   */
+  isLateOn(task: Task, referenceDate: Date = new Date(), now: Date = new Date()): boolean {
+    const count = this.completionCountFor(task, referenceDate)
+    if (count >= task.timesPerPeriod) return false
+
+    // Compared by day KEY, not as timestamps: a pinned day is built at noon, so
+    // `referenceDate > now` would call today-pinned-at-09:00 a future date and
+    // silently switch 'Atrasada' off every morning.
+    if (periodKey('daily', referenceDate) > periodKey('daily', now)) return false
+
+    return (
+      this.lateByWeekday(task, referenceDate) || count < this.dueByNow(task, referenceDate, now)
+    )
+  }
+
+  /**
+   * Past its weekday within the same week, so it can still be caught up. Note a
+   * Sunday task can never be late -- there is no day after Sunday in an ISO week.
+   */
+  private lateByWeekday(task: Task, referenceDate: Date): boolean {
     if (task.frequency !== 'weekly' || task.weekday === undefined) return false
     if (isoWeekday(referenceDate) <= task.weekday) return false
-    if (this.isCompletedFor(task, referenceDate)) return false
-
-    // 'Atrasada' is a claim about the past. Browsing forward inside the current
-    // week must not make a day that has not happened look overdue.
-    if (referenceDate > new Date()) return false
 
     // `existsIn` compares period keys, so a weekly task created on Friday
     // "existed" from Monday of that week. Without this a task seconds old would

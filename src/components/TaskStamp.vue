@@ -13,8 +13,10 @@ const props = withDefaults(
     periodLabel: string
     /** An inactive task is not part of the routine, so its dial does not turn. */
     disabled?: boolean
+    /** A deadline inside the period has passed with the dial still open. */
+    late?: boolean
   }>(),
-  { disabled: false },
+  { disabled: false, late: false },
 )
 defineEmits<{ advance: [] }>()
 
@@ -48,6 +50,7 @@ const checkedState = computed(() =>
     type="button"
     role="checkbox"
     class="lock"
+    :class="{ late }"
     :disabled="disabled"
     :aria-checked="checkedState"
     :aria-label="label"
@@ -106,6 +109,20 @@ const checkedState = computed(() =>
   fill: none;
   stroke: var(--color-line-strong);
   stroke-width: 2;
+}
+
+/*
+ * The instrument itself goes amber-red: the control you reach for IS the lamp,
+ * so the row does not need a second thing to say it. Only the unswept part of
+ * the dial -- whatever was already checked off keeps reading as done.
+ */
+.lock.late .track {
+  stroke: var(--color-alarm);
+  opacity: 0.85;
+}
+
+.lock.late .ring {
+  background: var(--color-alarm-dim);
 }
 
 .sweep {

@@ -1,6 +1,6 @@
 import { Timestamp, type DocumentData, type Firestore } from 'firebase/firestore'
 import type { Completion, Task, TaskFrequency, Weekday } from '@/entities'
-import { normalizeTimesPerPeriod } from '@/entities'
+import { normalizeTimesPerPeriod, normalizeTurns } from '@/entities'
 import type { TaskRepository } from '@/usecases/ports'
 import { FirestoreRepository } from './firestore-repository'
 
@@ -13,6 +13,7 @@ function serialize(task: Task): DocumentData {
     categoryId: task.categoryId ?? null,
     weekday: task.weekday ?? null,
     timesPerPeriod: task.timesPerPeriod,
+    turns: task.turns,
     active: task.active,
     completions: task.completions.map((completion) => ({
       key: completion.key,
@@ -51,6 +52,9 @@ function toCompletions(value: unknown): Completion[] {
 }
 
 function deserialize(data: DocumentData): Task {
+  // Hoisted: the turn plan is truncated against the target, so it must be read
+  // from the normalized value rather than from whatever the document holds.
+  const timesPerPeriod = normalizeTimesPerPeriod(data.timesPerPeriod)
   return {
     id: data.id as string,
     title: data.title as string,
@@ -60,7 +64,11 @@ function deserialize(data: DocumentData): Task {
     weekday: toWeekday(data.weekday),
     // Missing on every task written before the feature, and the normalizer
     // turns that absence into the 1 those tasks have always meant.
-    timesPerPeriod: normalizeTimesPerPeriod(data.timesPerPeriod),
+    timesPerPeriod,
+    // Same story one field down: absent on every document written before turns
+    // existed, and the normalizer reads that absence as the empty plan those
+    // tasks have always had. No migration.
+    turns: normalizeTurns(data.turns, timesPerPeriod),
     // Only an explicit `false` deactivates: every task written before the flag
     // existed was part of the routine, and a missing field must not hide it.
     active: data.active !== false,

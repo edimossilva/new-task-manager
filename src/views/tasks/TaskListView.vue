@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import type { Category, Task, TaskFrequency } from '@/entities'
-import { FREQUENCIES, FREQUENCY_LABELS, FREQUENCY_ORDER, INKS } from '@/entities'
+import { FREQUENCIES, FREQUENCY_LABELS, FREQUENCY_ORDER, INKS, turnPlan } from '@/entities'
 import { useTaskStore } from '@/stores/task-store'
 import { useCategoryStore } from '@/stores/category-store'
 import { useSortable } from '@/composables/use-sortable'
@@ -10,6 +10,7 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import CategoryBadge from '@/components/CategoryBadge.vue'
 import FrequencyBadge from '@/components/FrequencyBadge.vue'
 import WeekdayBadge from '@/components/WeekdayBadge.vue'
+import TurnBadge from '@/components/TurnBadge.vue'
 import TaskRowActions from '@/components/TaskRowActions.vue'
 
 /*
@@ -242,6 +243,12 @@ function handleDelete() {
         <div class="tags">
           <FrequencyBadge :frequency="task.frequency" />
           <WeekdayBadge v-if="task.weekday" :weekday="task.weekday" />
+          <TurnBadge
+            v-for="group in turnPlan(task.turns, task.timesPerPeriod).groups"
+            :key="group.turn"
+            :turn="group.turn"
+            :count="group.count"
+          />
           <CategoryBadge v-if="categoryOf(task)" :category="categoryOf(task)!" />
           <span v-if="task.timesPerPeriod > 1" class="chip figure">
             {{ task.timesPerPeriod }}x
@@ -277,9 +284,17 @@ function handleDelete() {
             <p v-if="task.description" class="row-desc">{{ task.description }}</p>
           </td>
           <td>
+            <!-- Turns ride the cadence cell rather than earning a column: the
+                 table is already at six, which is the phone's limit. -->
             <div class="tags">
               <FrequencyBadge :frequency="task.frequency" />
               <WeekdayBadge v-if="task.weekday" :weekday="task.weekday" />
+              <TurnBadge
+                v-for="group in turnPlan(task.turns, task.timesPerPeriod).groups"
+                :key="group.turn"
+                :turn="group.turn"
+                :count="group.count"
+              />
             </div>
           </td>
           <td>

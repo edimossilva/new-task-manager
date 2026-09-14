@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { TURN_LABELS, type Turn } from '@/entities'
 
 /**
  * Past this many, cells stop being countable at a glance and stop being big
@@ -8,9 +9,22 @@ import { computed } from 'vue'
  */
 const MAX_CELLS = 12
 
-const props = withDefaults(defineProps<{ count: number; total: number; readonly?: boolean }>(), {
-  readonly: false,
-})
+const props = withDefaults(
+  defineProps<{
+    count: number
+    total: number
+    readonly?: boolean
+    /**
+     * The turn each slot is pinned to, in check-off order. Presentational: the
+     * gauge is handed the plan rather than reading it, because the form's
+     * preview draws a strip for a task that does not exist yet.
+     */
+    slots?: (Turn | undefined)[]
+    /** How many slots the day has already asked for -- `TaskUseCases.dueByNow`. */
+    due?: number
+  }>(),
+  { readonly: false, slots: () => [], due: 0 },
+)
 defineEmits<{ set: [count: number]; undo: [] }>()
 
 const cells = computed(() => (props.total <= MAX_CELLS ? props.total : 0))
@@ -18,6 +32,24 @@ const cells = computed(() => (props.total <= MAX_CELLS ? props.total : 0))
 const filled = computed(() => Math.min(props.count, props.total))
 const complete = computed(() => filled.value >= props.total)
 const ratio = computed(() => (filled.value / props.total) * 100)
+
+/** Clamped like `filled`, and for the same reason: a lowered target outlives the plan. */
+const dueCells = computed(() => Math.min(props.due, props.total))
+
+/**
+ * The first cell of each turn group, which is where the strip opens a wider gap.
+ * Grouping is the whole turn treatment here: a label line under 13px cells would
+ * add a row to every task on Hoje to repeat what the chip row already names.
+ */
+function opensGroup(n: number): boolean {
+  return n > 1 && props.slots[n - 1] !== props.slots[n - 2]
+}
+
+function cellLabel(n: number): string {
+  const turn = props.slots[n - 1]
+  const base = `Marcar ${n} de ${props.total}`
+  return turn ? `${base} - ${TURN_LABELS[turn]}` : base
+}
 
 /** Zero-padded to the total's width, so the readout never reflows as it fills. */
 const readout = computed(() => String(filled.value).padStart(String(props.total).length, '0'))
@@ -43,10 +75,15 @@ const description = computed(() => `${filled.value} de ${props.total} marcacoes`
         :key="n"
         type="button"
         class="cell"
-        :class="{ on: n <= filled, next: !readonly && n === filled + 1 }"
+        :class="{
+          on: n <= filled,
+          next: !readonly && n === filled + 1,
+          overdue: n > filled && n <= dueCells,
+          'group-start': opensGroup(n),
+        }"
         :disabled="readonly"
         :aria-pressed="n <= filled"
-        :aria-label="`Marcar ${n} de ${total}`"
+        :aria-label="cellLabel(n)"
         :title="`${n}/${total}`"
         @click="$emit('set', n === filled ? n - 1 : n)"
       >
@@ -56,6 +93,15 @@ const description = computed(() => `${filled.value} de ${props.total} marcacoes`
 
     <div v-else class="bar" role="img" :aria-label="description">
       <div class="bar-fill" :style="{ width: `${ratio}%` }"></div>
+      <!--
+        Past twelve the strip has no cells to edge, so the turn deadline is drawn
+        as a notch instead -- the same target grammar the run chart uses.
+      -->
+      <div
+        v-if="dueCells > filled"
+        class="bar-notch"
+        :style="{ left: `${(dueCells / total) * 100}%` }"
+      ></div>
     </div>
 
     <span class="readout figure" aria-hidden="true">
@@ -122,6 +168,18 @@ const description = computed(() => `${filled.value} de ${props.total} marcacoes`
   border-color: var(--color-accent-text);
 }
 
+/* A slot whose turn is over with the chamber still empty. */
+.cell.overdue {
+  border-color: var(--color-alarm);
+  background-color: var(--color-alarm-dim);
+}
+
+/* The seam between two turns. The strip reads as groups in the order the chips
+   beside it name them. */
+.cell.group-start {
+  @apply ml-[5px];
+}
+
 .strip.live .cell:hover {
   border-color: var(--color-accent-text);
   background-color: var(--color-accent-dim);
@@ -152,6 +210,11 @@ const description = computed(() => `${filled.value} de ${props.total} marcacoes`
   background-color: var(--color-done);
   box-shadow: 0 0 8px var(--color-done-dim);
   transition: width 340ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.bar-notch {
+  @apply absolute top-0 bottom-0 w-px;
+  background-color: var(--color-alarm);
 }
 
 .readout {

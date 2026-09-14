@@ -25,9 +25,9 @@ env vars (`.env`, not committed). `.firebaserc` and the hosting cache are gitign
 
 A personal recurring-task tracker (UI text is in **Brazilian Portuguese**, written without
 diacritics). Two entities: **tasks** -- a title, optional description, a frequency of
-once / daily / weekly / monthly / yearly, an optional weekday and an optional category -- and
-**categories**, which group them. A task is checked off for the *current period* and re-arms itself
-when the next one starts.
+once / daily / weekly / monthly / yearly, an optional weekday, an optional turn and an optional
+category -- and **categories**, which group them. A task is checked off for the *current period*
+and re-arms itself when the next one starts.
 
 Data is stored per-user in Firestore under `users/{uid}/tasks/{taskId}` and
 `users/{uid}/categories/{categoryId}`, with Google sign-in via Firebase Auth. The security rules
@@ -133,9 +133,12 @@ layers.
     - Above `MAX_CELLS` (12) the strip degrades to one continuous hatched bar -- the home gauges'
       own track -- and the `-` button comes back as the fine control, because past a dozen the
       cells are neither countable at a glance nor big enough to hit.
-    - Empty cells carry the 45-degree hatch that `.meter-track` uses, filled ones a `--color-done`
-      ground with a small bloom, and the next one up is edged in `--color-accent-text` so the strip
-      points at itself. Everything is drawn from role tokens, so it re-skins with the five themes.
+    - Empty cells carry the same 45-degree hatch every meter in the app draws (there is no
+      shared class for it -- the gradient is restated in each scoped block), filled ones a
+      `--color-done` ground with a small bloom, and the next one up is edged in
+      `--color-accent-text` so the strip points at itself. A cell whose turn has passed with the
+      chamber still empty is edged in `--color-alarm`. Everything is drawn from role tokens, so it
+      re-skins with the five themes.
   - `TaskStamp`'s dial draws the ratio: `stroke-dashoffset` is **bound** rather than driven by a
     keyframe, since the arc now has intermediate positions, and the button reports
     `aria-checked="mixed"` when partly done. It derives "completed" from the count instead of
@@ -328,6 +331,11 @@ layers.
   flipping `--color-accent-text` and `.ink-text`, and updating `DEFAULT_THEME` plus the
   `theme-color` meta in `index.html` -- the light/dark decision is baked into all four. `terminal` also swaps
   `--font-sans` to the mono face, so the whole panel becomes one readout.
+- **Fault states never wear an ink.** `--color-alarm` is the one colour the app reserves for
+  "this is wrong", and `Atrasada` used to be drawn in `--color-accent-text` -- whatever the user
+  picked for delight, so a green accent had the overdue tag reading as a commendation. Anything
+  saying a deadline has passed (the chip, the row rail, the stamp's track, the gauge's overdue
+  cells, a late `TurnBadge`, the annunciator) speaks in `--color-alarm` / `--color-alarm-dim`.
 - **The ink palette** (`src/entities/palette.ts`) is the single source of truth for colour:
   twenty named inks, each with **four** values. One hex cannot do four jobs -- `base` for fills,
   `deep` for the ink as TEXT on a LIGHT ground, `bright` for TEXT on a DARK ground, `dim` for
@@ -404,11 +412,17 @@ layers.
     head, a trace mixed into the hairline, and the fill of its own progress meter -- that
     category's check-offs for the browsed period, on the same hatched track the home meter uses.
     The unfiled unit has no ink, so its rail is drawn as a dashed gap and its meter goes grey.
+  - **A late row is the panel's other annunciator.** It takes an alarm rail INSIDE the category's
+    own (never flush with it, or the two read as one thick edge), a wash running off to the right
+    so the left margin the eye scans is lit without tinting the title, an `Atrasada` chip and a
+    `TaskStamp` whose unswept track goes alarm -- the control you reach for IS the lamp, so the
+    row needs nothing further. The rail fills the list's own left padding, so rail, gutter and
+    wash are one continuous field rather than a line floating off the text.
   - A task pointing at a category that no longer exists falls into the unfiled bucket rather than
     out of the page. The delete guard makes it unlikely, but a task nothing renders is a task
     nobody can edit or delete.
-  - The card carries only what checking off needs: stamp, title, gauge, weekday and state chips,
-    and **one action -- `TaskInfoLink`**, the way into the task's own page. Reading a task is
+  - The card carries only what checking off needs: stamp, title, gauge, weekday, turn and state
+    chips, and **one action -- `TaskInfoLink`**, the way into the task's own page. Reading a task is
     safe from a page whose job is ticking things off; editing, switching off and deleting belong
     to the registry. No description and no frequency badge (the band above already names it). It
     had a second, denser mode while the tasks page shared it; the table took that job, and a
@@ -416,6 +430,17 @@ layers.
   - The chip row is dropped entirely when a task has nothing to say there, rather than spending
     its top margin on an empty line, and the info link is pulled up out of the row's padding so a
     44px target cannot make a row taller than its 30px stamp.
+  - **The master annunciator** sits above the gauges and only when something is overdue: a
+    hazard-hatched alarm strip carrying a pulsing lamp and the count. It is the app's own
+    45-degree meter hatch coarsened from a 3px scale pitch to a 6px hazard pitch, so the two
+    cannot be confused, and the count is set large because lit, it is the most urgent thing on
+    the page and was reading quieter than the gauges under it. Each band head repeats the figure
+    for its own horizon. Dropped entirely when nothing is late -- an annunciator that is always
+    lit annunciates nothing. The lamp pings rather than blinks; the global
+    `prefers-reduced-motion` blanket settles it to a plain dot.
+  - The overdue set is resolved **once per render** into a `Set` of ids. `isLateOn` walks a
+    task's check-offs and the status sort calls its comparator O(n log n) times, so asking the
+    question inside the comparator re-walked the same completions on every comparison.
   - Above the bands sits a **gauge per band**, not one meter for the day: four dailies left and
     one yearly left are not the same debt, and a single bar averaging them says neither. Each
     gauge is tinted with its band's frequency ink, so a glance maps it to the stratum below
@@ -434,9 +459,9 @@ layers.
     sort inside a card needs no term for it -- status, then title.
 - **The registry** (`TaskListView.vue`): EVERY task, once, whether or not it is due today, active,
   or finished. Six fields, all of them properties of the template -- title (+ description),
-  frequency (+ weekday), category, `timesPerPeriod` as `Nx`, `Ativa` / `Inativa`, and the row
-  actions. It is the only place that shows the whole set, which is what makes it the place to
-  find a task you have not seen in a month.
+  frequency (+ weekday or turns), category, `timesPerPeriod` as `Nx`, `Ativa` / `Inativa`, and
+  the row actions. It is the only place that shows the whole set, which is what makes it the
+  place to find a task you have not seen in a month.
   - A table above `md` and a stacked card list below it, the same pair `CategoryListView` uses:
     six columns on a 360px screen is a horizontal scroll nobody wants. Both render the same rows
     from the same sort, so there is one list with two typographies, not two lists.
@@ -487,16 +512,69 @@ layers.
     after it. A Sunday task therefore has no catch-up window; a Monday task is late six days in
     seven.
   - `isDueOn` = `existsIn && appearsOn` is the **single** predicate the views filter by; `appearsOn`
-    (the weekday gate alone) is private so the two cannot diverge. `isLateOn` carries two
-    non-obvious guards: a task created *after* its due day in the same week is not late (`existsIn`
-    is week-granular, so a Friday-created Terca task would otherwise be born overdue), and a
-    reference date in the future is never late (browsing forward inside the current week).
+    (the weekday gate alone) is private so the two cannot diverge. `isLateOn` is now the **OR of
+    two rules** with the shared gates hoisted -- a finished period is never late, and a reference
+    day in the future is never late -- over the private `lateByWeekday` and the turn rule below.
+    No task is ever both: a weekday implies weekly, a turn implies daily. `lateByWeekday` keeps
+    its own guard for a task created *after* its due day in the same week (`existsIn` is
+    week-granular, so a Friday-created Terca task would otherwise be born overdue); the turn rule
+    needs the same guard one cadence finer, and the two are deliberately NOT merged.
+  - The future gate is a **day-key comparison, not a timestamp one**. A pinned day is built at
+    noon, so `referenceDate > new Date()` -- what it used to be -- read today-pinned-at-09:00 as a
+    future date and silently switched `Atrasada` off every morning. The lateness predicates
+    therefore also take an explicit `now`, which the views pass as `today`: a pinned
+    `referenceDate` deliberately does not subscribe to the clock, so without it a chip would
+    freeze at the turn it first rendered in.
   - The invariant "weekday set implies weekly" is enforced in `create`/`update`, not the form --
     `TaskFormView` spreads `{ ...existing, ...input }`, where an omitted key preserves the old value
     rather than clearing it. `deserialize` also coerces out-of-range values to `undefined`, since a
     `weekday: 8` would be permanently invisible and so undeletable.
   - `Qualquer dia` is `undefined`, never `1`: Monday and unconstrained match identically for
     visibility but differ for overdue.
+- **Turn-pinned daily tasks**: a `daily` task may carry `turns: Turn[]` (`Turn = 1..3`, Manha /
+  Tarde / Noite, cut at **12:00** and **18:00**). Completion is still the **day** key -- a turn is
+  a deadline INSIDE the period, never part of it, the exact parallel to never encoding the weekday
+  into the week key. Ticking a Noite slot at 09:00 is allowed and correct; the day is the period.
+  - `Turn` is numeric and ordered for the same reason `Weekday` is -- lateness is a `<=` on
+    position within the period -- but honestly for a weaker one: `getHours()` is already
+    chronological, so the type is naming and encoding, not a fix for a broken convention.
+    `turnOf()` in `period.ts` is the only `getHours()`-for-a-turn call, the role `isoWeekday`
+    plays for `getDay()`.
+  - **The value repeats once per slot**, ascending: two morning check-offs are `[1, 1]`, the same
+    shape a period key takes once per check-off. Fewer entries than `timesPerPeriod` leaves an
+    untimed remainder, and it sorts LAST, so an untimed check-off is never the reason a turn is
+    late. `turnSlots` writes that mapping once, for the gauge, the badges and `dueByNow` together.
+  - **Crediting is POSITIONAL**: the Nth check-off of the day satisfies the Nth slot. Nothing on a
+    `Completion` records which slot it filled, and that is deliberate -- a check-off carries only
+    a key and a moment. The consequence, stated rather than hidden: catching up a Manha slot at
+    14:00 clears it (right, and free), but ticking the Noite slot at 19:00 with the morning never
+    done does NOT read as late. Deriving the slot from `at` instead fails three ways --
+    `setCompletionCount` stamps every surplus entry with `now`, so tapping cell five at 19:00
+    would leave a finished task reading two empty morning slots; catch-up would invert, leaving a
+    task overdue forever after it was done; and legacy entries carry no moment at all.
+  - **Turns never hide a task.** Two states, not the weekday's three: `Pendente`, then `Atrasada`
+    once the turn is fully over. So `isDueOn` and `appearsOn` are untouched, Hoje shows every due
+    task all day, and nothing appears or vanishes inside one day.
+  - `TaskUseCases.dueByNow` is how many slots the day has already asked for, and it is public
+    because both `isLateOn` and the gauge's overdue cells read it -- a figure computed twice can
+    drift. A turn is asked of only once it is **fully over**, so a Noite slot is never late on its
+    own day: the same shape as a Sunday task never being late inside its own week. It reads no
+    completions, which keeps it cheap on Hoje's hot path, and clamps to `timesPerPeriod` so a plan
+    that outlived a lowered target cannot ask for more than the period holds.
+  - `turnOf` is applied to `now` and to `createdAt`, **never to `referenceDate`**, which is noon by
+    construction and would report Tarde for every browsed day. Which day we are on is a key
+    comparison; what time it is inside that day only the real clock may answer.
+  - The invariant "turns set implies daily" is enforced in `create`/`update`, where the weekday's
+    is. `update` also **re-normalizes** rather than merely coercing: lowering `timesPerPeriod`
+    must truncate the plan, or the surplus slots would read `Atrasada` forever. Truncation keeps
+    the EARLIEST slots, a deadline already missed being the one that still matters. A round trip
+    through another frequency loses the plan, exactly as it loses the weekday, and for the same
+    reason -- a stale one would start firing the moment the cadence came back.
+  - `deserialize` normalizes a missing field to `[]`, which is what every document written before
+    the feature means, so there is no migration. Out-of-range values are dropped the way
+    `toWeekday` drops them.
+  - The weekly summary is untouched: turns do not change what a day ASKS for, only whether the
+    asking is already overdue. That page stays a reading of volume, not of punctuality.
 - **Period selection** (`src/stores/period-store.ts`): the store owns both the live clock (`now`,
   ticked every 60s and on `visibilitychange`) and `selection` — `{ year, month, day } | null`, where
   **null means follow the clock**. `usePeriodSelection()` derives `referenceDate`, `today` and

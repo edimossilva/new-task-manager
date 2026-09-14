@@ -1,14 +1,19 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import type { Task, TaskFrequency, Weekday } from '@/entities'
+import type { Task, TaskFrequency, Turn, Weekday } from '@/entities'
 import {
   FREQUENCIES,
   FREQUENCY_LABELS,
   MAX_TIMES_PER_PERIOD,
   TIMES_PER_PERIOD_LABELS,
+  TURNS,
+  TURN_LABELS,
+  TURN_RANGES,
   WEEKDAYS,
   WEEKDAY_LABELS,
+  turnPlan,
+  turnSlots,
 } from '@/entities'
 import { useNotificationStore } from '@/stores/notification-store'
 import { useTaskStore } from '@/stores/task-store'
@@ -52,6 +57,34 @@ const categoryId = ref<string>('')
 // than quietly reading as 1.
 const timesPerPeriod = ref<number | ''>(1)
 
+/*
+ * How many check-offs each turn claims. ONE source of truth for both input
+ * shapes: the single select below is a view over this same record, so switching
+ * `timesPerPeriod` between 1 and N round-trips instead of losing the setting.
+ */
+const turnCounts = ref<Record<Turn, number>>({ 1: 0, 2: 0, 3: 0 })
+
+/** The plan as the entity stores it: the value repeated once per slot, ascending. */
+const chosenTurns = computed<Turn[]>(() =>
+  TURNS.flatMap((turn) => Array<Turn>(Math.max(0, turnCounts.value[turn])).fill(turn)),
+)
+
+/** '' is "Qualquer horario", the same sentinel the weekday select uses. */
+const singleTurn = computed<Turn | ''>({
+  get: () => chosenTurns.value[0] ?? '',
+  set: (value) => {
+    turnCounts.value = { 1: 0, 2: 0, 3: 0 }
+    if (value !== '') turnCounts.value[value] = 1
+  },
+})
+
+const target = computed(() => (typeof timesPerPeriod.value === 'number' ? timesPerPeriod.value : 0))
+
+const plan = computed(() => turnPlan(chosenTurns.value, target.value))
+
+/** Refused by `validateTurns` on submit; said here first, where it can be fixed. */
+const turnsOverflow = computed(() => chosenTurns.value.length > target.value)
+
 watch(existing, (task) => {
   if (!task) return
   title.value = task.title
@@ -86,6 +119,9 @@ function handleSubmit() {
     // Always present, never omitted: the spread below would otherwise preserve
     // the previous value instead of clearing it.
     weekday: chosenWeekday,
+    // Always present for the same reason, and cleared outright when the cadence
+    // is not daily: a turn is a slice of ONE day.
+    turns: frequency.value === 'daily' ? chosenTurns.value : [],
     categoryId: categoryId.value || undefined,
     timesPerPeriod: timesPerPeriod.value === '' ? NaN : timesPerPeriod.value,
   }
@@ -95,7 +131,9 @@ function handleSubmit() {
   if (!saved) return
 
   // The task list hides tasks whose weekday has not come up yet, so a freshly
-  // created one can be absent from the page we are about to land on.
+  // created one can be absent from the page we are about to land on. There is
+  // deliberately no counterpart for turns: they never hide a task, so the same
+  // toast would be noise.
   if (!existing.value && chosenWeekday !== undefined) {
     notifications.success(`Tarefa criada para ${WEEKDAY_LABELS[chosenWeekday]}.`)
   }
@@ -163,6 +201,7 @@ function handleSubmit() {
           v-if="previewTotal"
           :count="0"
           :total="previewTotal"
+          :slots="frequency === 'daily' ? turnSlots(chosenTurns, previewTotal) : []"
           readonly
           class="mt-2.5"
         />
@@ -186,6 +225,66 @@ function handleSubmit() {
       </div>
     </Transition>
 
+    <!--
+      Turnos are daily-only: a turn is a slice of ONE day, and a monthly target
+      has no single day for a morning to be late on. One model, two input shapes
+      -- the same degradation the gauge itself makes past twelve cells.
+    -->
+    <Transition name="reveal">
+      <div v-if="frequency === 'daily'" class="form-group">
+        <template v-if="target <= 1">
+          <label for="turn">Turno</label>
+          <select id="turn" v-model="singleTurn">
+            <option value="">Qualquer horario</option>
+            <option v-for="option in TURNS" :key="option" :value="option">
+              {{ TURN_LABELS[option] }} ({{ TURN_RANGES[option] }})
+            </option>
+          </select>
+        </template>
+
+        <template v-else>
+          <!-- A caption, not a label: each row's own label names its input. -->
+          <p class="group-label">Turnos</p>
+          <div class="turn-grid">
+            <label v-for="option in TURNS" :key="option" class="turn-row">
+              <span class="turn-name">{{ TURN_LABELS[option] }}</span>
+              <span class="turn-range figure">{{ TURN_RANGES[option] }}</span>
+              <input
+                v-model.number="turnCounts[option]"
+                type="number"
+                inputmode="numeric"
+                min="0"
+                :max="target"
+                step="1"
+                class="turn-input"
+              />
+            </label>
+          </div>
+        </template>
+
+        <!--
+          Outside both shapes: lowering the target to 1 can leave a plan the
+          single select cannot show, and a form that reads Manha while the submit
+          refuses it is worse than one that says why.
+        -->
+        <p
+          v-if="turnsOverflow || target > 1"
+          class="turn-rest figure"
+          :class="{ over: turnsOverflow }"
+        >
+          <template v-if="turnsOverflow">
+            {{ chosenTurns.length }} turnos para {{ target }} marcacoes
+          </template>
+          <template v-else>Sem turno: {{ plan.untimed }}</template>
+        </p>
+
+        <p class="hint">
+          Quando cada marcacao e esperada. A tarefa continua visivel o dia inteiro; passado o turno,
+          ela aparece como atrasada.
+        </p>
+      </div>
+    </Transition>
+
     <div class="flex flex-col-reverse sm:flex-row gap-2 pt-1">
       <RouterLink to="/tasks" class="btn btn-secondary">Cancelar</RouterLink>
       <button type="submit" class="btn">Salvar</button>
@@ -196,6 +295,40 @@ function handleSubmit() {
 
 <style scoped>
 @reference "../../assets/main.css";
+
+/* Matches the global label rule: this names a group, not a control. */
+.group-label {
+  @apply block font-mono text-[0.6875rem] font-medium uppercase tracking-[0.14em]
+         text-fg-faint mb-1.5;
+}
+
+.turn-grid {
+  @apply flex flex-col gap-1.5;
+}
+
+.turn-row {
+  @apply flex items-center gap-2;
+}
+
+.turn-name {
+  @apply w-[4.5rem] shrink-0 text-[0.875rem] text-fg;
+}
+
+.turn-range {
+  @apply flex-1 text-[0.6875rem] text-fg-faint;
+}
+
+.turn-input {
+  @apply w-[4.5rem] shrink-0;
+}
+
+.turn-rest {
+  @apply text-[0.75rem] text-fg-soft mt-1.5;
+}
+
+.turn-rest.over {
+  color: var(--color-alarm);
+}
 
 .eyebrow {
   @apply font-mono text-[0.625rem] font-medium uppercase tracking-[0.16em] text-accent-text mb-1;

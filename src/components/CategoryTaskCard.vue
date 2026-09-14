@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { Category, Task } from '@/entities'
-import { INKS, formatDate } from '@/entities'
+import type { Category, Task, Turn } from '@/entities'
+import { INKS, formatDate, turnPlan, turnSlots } from '@/entities'
 import { useTaskStore } from '@/stores/task-store'
 import { usePeriodSelection } from '@/composables/use-period-selection'
 import WeekdayBadge from '@/components/WeekdayBadge.vue'
+import TurnBadge from '@/components/TurnBadge.vue'
 import TaskStamp from '@/components/TaskStamp.vue'
 import CompletionGauge from '@/components/CompletionGauge.vue'
 import TaskInfoLink from '@/components/TaskInfoLink.vue'
@@ -25,7 +26,7 @@ const props = defineProps<{
 }>()
 
 const store = useTaskStore()
-const { referenceDate } = usePeriodSelection()
+const { referenceDate, today } = usePeriodSelection()
 
 /*
  * Bound inline from the ink table rather than through twenty CSS classes, the
@@ -48,8 +49,30 @@ function isCompleted(task: Task): boolean {
   return store.isCompletedFor(task, referenceDate.value)
 }
 
+/*
+ * `today` is passed as the clock on purpose. A turn's deadline passes during the
+ * browsed day, and a pinned `referenceDate` deliberately does not subscribe to
+ * the tick -- without this the chip would freeze at the turn it first rendered in.
+ */
 function isLate(task: Task): boolean {
-  return store.isLateOn(task, referenceDate.value)
+  return store.isLateOn(task, referenceDate.value, today.value)
+}
+
+/** The turns already asked for with the slot still open -- WHICH turn is late. */
+function lateTurnsOf(task: Task): Turn[] {
+  return store.lateTurns(task, referenceDate.value, today.value)
+}
+
+function turnGroups(task: Task) {
+  const late = new Set(lateTurnsOf(task))
+  return turnPlan(task.turns, task.timesPerPeriod).groups.map((group) => ({
+    ...group,
+    late: late.has(group.turn),
+  }))
+}
+
+function dueOf(task: Task): number {
+  return store.dueByNow(task, referenceDate.value, today.value)
 }
 
 function countOf(task: Task): number {
@@ -113,12 +136,18 @@ const progress = computed(() =>
     </div>
 
     <TransitionGroup tag="ul" name="task" class="unit-list">
-      <li v-for="task in tasks" :key="task.id" class="task" :class="{ off: !task.active }">
+      <li
+        v-for="task in tasks"
+        :key="task.id"
+        class="task"
+        :class="{ off: !task.active, late: isLate(task) }"
+      >
         <TaskStamp
           :task="task"
           :count="countOf(task)"
           :period-label="formatDate(referenceDate)"
           :disabled="!task.active"
+          :late="isLate(task)"
           @advance="store.advanceCompletion(task.id, referenceDate)"
         />
 
@@ -129,6 +158,8 @@ const progress = computed(() =>
             v-if="task.timesPerPeriod > 1"
             :count="countOf(task)"
             :total="task.timesPerPeriod"
+            :slots="turnSlots(task.turns, task.timesPerPeriod)"
+            :due="dueOf(task)"
             class="mt-1"
             @set="(count) => store.setCompletionCount(task.id, count, referenceDate)"
             @undo="store.undoCompletion(task.id, referenceDate)"
@@ -136,8 +167,23 @@ const progress = computed(() =>
 
           <!-- Dropped entirely when there is nothing to say, rather than
                spending its top margin on an empty line. -->
-          <div v-if="task.weekday || !task.active || isLate(task)" class="task-tags">
+          <div
+            v-if="task.weekday || task.turns.length || !task.active || isLate(task)"
+            class="task-tags"
+          >
             <WeekdayBadge v-if="task.weekday" :weekday="task.weekday" />
+            <!--
+              A row can never carry both: a weekday implies weekly, a turn
+              implies daily. A 1x task has no gauge to edge, so the chip is the
+              only place its turn can be read.
+            -->
+            <TurnBadge
+              v-for="group in turnGroups(task)"
+              :key="group.turn"
+              :turn="group.turn"
+              :count="group.count"
+              :late="group.late"
+            />
             <span v-if="!task.active" class="task-off">Inativa</span>
             <span v-else-if="isLate(task)" class="task-late">Atrasada</span>
           </div>
@@ -254,7 +300,31 @@ const progress = computed(() =>
 }
 
 .task {
-  @apply flex items-start gap-3 py-2 border-b border-line;
+  @apply relative flex items-start gap-3 py-2 border-b border-line;
+}
+
+/*
+ * The annunciator's other half, on the offending row. A tick of alarm inside the
+ * category's own rail -- deliberately not flush with it, or the two would read
+ * as one thick edge -- and a wash that runs off to the right so it lights the
+ * left margin the eye scans without tinting the text it lands on.
+ */
+.task.late {
+  background-image: linear-gradient(90deg, var(--color-alarm-dim), transparent 62%);
+}
+
+/*
+ * Fills the list's own left padding, so the rail, the gutter and the row's wash
+ * are one continuous field rather than a red line floating off the text. Width
+ * stops exactly at the content box, which is what keeps it off the title.
+ */
+.task.late::before {
+  @apply absolute inset-y-0 pointer-events-none;
+  content: '';
+  left: -14px;
+  width: 14px;
+  border-left: 2px solid var(--color-alarm);
+  background: var(--color-alarm-dim);
 }
 
 .task:last-child {
@@ -288,9 +358,15 @@ const progress = computed(() =>
          text-fg-faint bg-well border border-line-strong px-1.5 py-0.5 rounded-[2px];
 }
 
+/*
+ * Alarm, not the accent it used to wear. The accent is whatever the user picked
+ * for delight, so a green one had 'Atrasada' reading as a commendation; a fault
+ * has to speak in the one colour the app reserves for faults.
+ */
 .task-late {
   @apply font-mono text-[0.625rem] font-medium uppercase tracking-[0.1em]
-         text-void bg-accent-text px-1.5 py-0.5 rounded-[2px];
+         text-void px-1.5 py-0.5 rounded-[2px];
+  background: var(--color-alarm);
 }
 
 /* A unit arriving: it slides up out of the rail rather than fading in place. */

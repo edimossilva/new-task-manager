@@ -1,4 +1,4 @@
-import type { TaskFrequency, Weekday } from './task'
+import type { TaskFrequency, Turn, Weekday } from './task'
 
 /**
  * Sort weight for frequencies. Sorting on the label would order them
@@ -107,6 +107,64 @@ export const WEEKDAY_SHORT: Record<Weekday, string> = {
   5: 'Sex',
   6: 'Sab',
   7: 'Dom',
+}
+
+export const TURNS: Turn[] = [1, 2, 3]
+
+export const TURN_LABELS: Record<Turn, string> = {
+  1: 'Manha',
+  2: 'Tarde',
+  3: 'Noite',
+}
+
+/** The boundaries are invisible on a badge, so the tooltip prints them. */
+export const TURN_RANGES: Record<Turn, string> = {
+  1: '00:00 - 11:59',
+  2: '12:00 - 17:59',
+  3: '18:00 - 23:59',
+}
+
+/**
+ * The turn a moment falls in. The only `getHours()`-for-a-turn call in the app,
+ * the role `isoWeekday` plays for `getDay()`: the boundaries live here and
+ * nowhere else, so the three slices cannot drift apart.
+ *
+ * Local time, like every period function -- a UTC hour would shift the whole
+ * day's deadlines by the offset.
+ */
+export function turnOf(date: Date): Turn {
+  const hour = date.getHours()
+  if (hour < 12) return 1
+  if (hour < 18) return 2
+  return 3
+}
+
+/**
+ * The turn of each slot in check-off order: the pinned turns ascending, then
+ * `undefined` for the unpinned remainder.
+ *
+ * This IS the positional crediting rule, written once, so the gauge's cells, the
+ * badges and `dueByNow` cannot disagree about which slot the Nth check-off is.
+ */
+export function turnSlots(turns: Turn[], timesPerPeriod: number): (Turn | undefined)[] {
+  return Array.from({ length: timesPerPeriod }, (_, index) => turns[index])
+}
+
+/**
+ * The same plan read as badges: one group per turn, plus the remainder that is
+ * pinned to nothing. The form's `Sem turno` readout and the badge row both need
+ * that remainder, and a figure computed twice is a figure that can drift.
+ */
+export function turnPlan(
+  turns: Turn[],
+  timesPerPeriod: number,
+): { groups: { turn: Turn; count: number }[]; untimed: number } {
+  const groups = TURNS.map((turn) => ({
+    turn,
+    count: turns.filter((entry) => entry === turn).length,
+  })).filter((group) => group.count > 0)
+
+  return { groups, untimed: Math.max(0, timesPerPeriod - turns.length) }
 }
 
 /** ISO-8601 weekday, Monday = 1 .. Sunday = 7. The only `getDay()` call in the app. */
