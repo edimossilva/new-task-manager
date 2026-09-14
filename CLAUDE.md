@@ -623,13 +623,18 @@ layers.
     today reads plain. `turnState` returns both lists from one pass because the row needs both and
     they share a `completionCountFor` and a `dueByNow`; they are disjoint by construction, every
     late turn being strictly before the running one and every current turn equal to it.
-    - A turn whose slots are all checked off is **flagged done**: the app's `--color-done` ink
-      and a miniature of the dial's own tick. The tick matters as much as the ink -- the accent
-      is the user's to choose and can be a green, so the checked state is marked by a SHAPE too.
+    - A turn whose slots are all checked off is **struck through and stood down**: it recedes to
+      `--color-fg-faint` on a hairline, quieter than a turn still AHEAD, which at least still
+      wants doing. The rule through it is drawn in `--color-done`, and that green line is what
+      says settled rather than disabled -- the one thing this state must not be mistaken for.
+      A strike is also a SHAPE, which matters because the accent is the user's to choose and can
+      itself be a green; colour alone could not carry the distinction.
       `turnPlan` carries a `doneAt` per group (the check-off count at which it is fully covered),
       which keeps the positional crediting rule in `period.ts` instead of re-derived per view.
-      A group only half covered is not flagged; it keeps whatever the clock says about it, and
+      A group only half covered is not struck; it keeps whatever the clock says about it, and
       the gauge below carries the granular progress.
+      The chip is `inline-block`, not `inline-flex`: a strike does not propagate into the
+      anonymous flex item an inline-flex container wraps its text in.
     - **The running turn is a claim about the PRESENT**, so it holds only while the browsed day
       IS today.
       It therefore cannot lean on `dueByNow`, whose past-day rule is the opposite: a day already

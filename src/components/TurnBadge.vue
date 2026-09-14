@@ -46,14 +46,6 @@ const title = computed(() => {
     clock has something to say about it.
   -->
   <span class="badge" :class="state" :title="title">
-    <!--
-      The dial's own tick, in miniature. A checked turn is the one state that
-      must survive the accent being any colour the user likes, including a green
-      or a red -- so it is marked by a SHAPE as well as by the done ink.
-    -->
-    <svg v-if="done" class="tick" viewBox="0 0 32 32" aria-hidden="true">
-      <path d="M8 16.5 L13.5 22 L24 10.5" />
-    </svg>
     {{ TURN_LABELS[turn] }}<template v-if="count > 1">&nbsp;&times;{{ count }}</template>
   </span>
 </template>
@@ -62,25 +54,25 @@ const title = computed(() => {
 @reference "../assets/main.css";
 
 .badge {
-  @apply inline-flex items-center gap-1 px-1.5 py-0.5 font-mono text-[0.625rem] font-medium
+  @apply inline-block px-1.5 py-0.5 font-mono text-[0.625rem] font-medium
          uppercase tracking-[0.1em] leading-[1.5] whitespace-nowrap
          text-fg bg-well border border-line-strong rounded-[2px];
 }
 
-.tick {
-  @apply w-[9px] h-[9px] shrink-0 -ml-px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 3.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-/* Checked off: the app's done ink, the same one the dial and the cells wear. */
+/*
+ * Checked off, and therefore the QUIETEST chip in the row -- quieter than a turn
+ * still ahead, which at least still wants doing. It recedes to the faint
+ * foreground and a hairline, and the rule through it is drawn in the app's done
+ * ink: that green line is what says settled rather than disabled, which is the
+ * one thing this state must not be mistaken for.
+ */
 .badge.done {
-  color: var(--color-done);
-  border-color: var(--color-done);
-  background: var(--color-done-dim);
+  color: var(--color-fg-faint);
+  border-color: var(--color-line);
+  background: transparent;
+  text-decoration: line-through;
+  text-decoration-color: var(--color-done);
+  text-decoration-thickness: 1.5px;
 }
 
 /* The turn whose deadline has passed with the slot still open. */
