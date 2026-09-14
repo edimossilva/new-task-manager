@@ -490,11 +490,14 @@ layers.
     - Making them buttons gave up the `role="status"` announcement, which is the right trade
       once they are interactive: each carries an `aria-label` naming the action and
       `aria-pressed` for the state.
-    - **`background: var(--x)` as a bare shorthand does not work here.** It resolves
-      invalid-at-computed-value-time, which silently drops the colour AND clears whatever the
-      base rule painted, rather than falling back to it. The pressed grounds use
-      `background-color` / `background-image` longhands. Worth remembering: the failure is
-      silent and looks like a specificity problem.
+    - **`background-color: var(--color-...)` does not paint on these two segments.** It computes
+      to transparent while the SAME variable resolves normally for `color`, for `border-color`,
+      and inside `color-mix()` or a gradient. The mechanism is not understood -- it is not the
+      `--color-accent-text` reference chain, since `--color-alarm` is a plain hex and fails
+      identically. Both pressed grounds are therefore painted as a flat one-stop
+      `linear-gradient`, with the annunciator's hazard hatch layered over it. The failure is
+      SILENT and reads exactly like a specificity problem, so check the rendered pixels rather
+      than the rule: this shipped broken once, with both readouts looking unpressed.
   - The overdue set is resolved **once per render** into a `Set` of ids. `isLateOn` walks a
     task's check-offs and the status sort calls its comparator O(n log n) times, so asking the
     question inside the comparator re-walked the same completions on every comparison.
@@ -647,6 +650,19 @@ layers.
       the gauge below carries the granular progress.
       The chip is `inline-block`, not `inline-flex`: a strike does not propagate into the
       anonymous flex item an inline-flex container wraps its text in.
+    - **A task with NO turn is late once Noite BEGINS.** It has no deadline inside the day, so
+      it is given one at the start of the last turn: past that the day is running out, and a
+      daily task still open at nightfall is behind whatever it was going to be. This is
+      deliberately NOT the rule a Noite slot gets -- that slot has an explicit deadline, the end
+      of the day, and is being kept to it, where an untimed task has none and would otherwise
+      never get a warning at all. The `floor`'s counterpart applies: a task created after
+      nightfall never had the day, so it is not born overdue tonight.
+      - It is daily-only. A `once`, `weekly`, `monthly` or `yearly` task does not run out of
+        day, and nothing about those cadences changed.
+      - A task that carries SOME turns plus an untimed remainder is unchanged: only its pinned
+        slots have deadlines. Mixing the two would put an untimed slot's deadline (nightfall)
+        before a Noite slot's (end of day) while the untimed slot sorts after it, and the
+        positional crediting order would stop matching the deadline order.
     - **The running turn is a claim about the PRESENT**, so it holds only while the browsed day
       IS today.
       It therefore cannot lean on `dueByNow`, whose past-day rule is the opposite: a day already
@@ -696,6 +712,24 @@ layers.
 - **Stores** are thin Pinia wrappers: they construct use cases on each call via `createUseCases()`
   (pulling repos from the provider), copy results into `ref`s, and push success messages through
   `notification-store` (rendered by `NotificationToast` in `App.vue`).
+
+## Preview harness
+
+`yarn harness` (port 5199) runs the real views, stores and use cases against fabricated data,
+with `@/adapters/repositories` aliased to in-memory stand-ins. It exists because the states this
+app cares about -- an overdue turn, a running one, a category with nothing left, a row under a
+spotlight -- take a sign-in, several tasks and the right hour to reach in the real app.
+`preview-harness/README.md` has the query parameters (`theme`, `accent`, `at`, `click`) and the
+headless-screenshot recipe; `?at=20:30` freezes the clock, which is how a rule that only fires
+at a particular hour gets looked at at all. Two things it has already caught that nothing else
+would:
+
+- A `background-color` that silently did not paint (above). Reading the rule is not enough;
+  read the pixels.
+- Its own page once omitted the app's font links, so every screenshot rendered in fallback
+  faces while looking plausible. The Vite config now lifts those links out of `index.html`, and
+  `preview-harness/` sits inside `tsconfig.app.json` with its stubs typed against the real
+  ports, so a changed port fails `yarn type-check` instead of rotting.
 
 ## Code Style
 

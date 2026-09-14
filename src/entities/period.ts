@@ -111,6 +111,9 @@ export const WEEKDAY_SHORT: Record<Weekday, string> = {
 
 export const TURNS: Turn[] = [1, 2, 3]
 
+/** The stretch of day a task with no turn of its own is measured against. */
+export const LAST_TURN: Turn = 3
+
 export const TURN_LABELS: Record<Turn, string> = {
   1: 'Manha',
   2: 'Tarde',

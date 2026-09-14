@@ -423,12 +423,15 @@ const eyebrow = computed(() =>
  */
 .annunciator.on {
   color: var(--color-void);
-  background-color: var(--color-alarm);
-  background-image: repeating-linear-gradient(
-    45deg,
-    transparent 0 6px,
-    color-mix(in srgb, var(--color-void) 13%, transparent) 6px 12px
-  );
+  /* Hatch over a flat one-stop gradient -- see `.turnbar.on` for why the ground
+     is not a `background-color`. First layer listed paints on top. */
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      transparent 0 6px,
+      color-mix(in srgb, var(--color-void) 13%, transparent) 6px 12px
+    ),
+    linear-gradient(var(--color-alarm), var(--color-alarm));
 }
 
 .annunciator.on .annunciator-lamp {
@@ -437,11 +440,19 @@ const eyebrow = computed(() =>
 
 .turnbar.on {
   color: var(--color-void);
-  /* Longhands, not the `background` shorthand: a shorthand whose whole value is
-     a single var() resolves invalid-at-computed-value-time here, which silently
-     drops the colour AND clears the base gradient rather than falling back. */
-  background-color: var(--color-accent-text);
-  background-image: none;
+  /*
+   * Painted as a flat one-stop GRADIENT rather than `background-color`.
+   *
+   * On these two segments `background-color: var(--color-...)` computes to
+   * transparent, while the SAME variable resolves normally for `color`, for
+   * `border-color`, and inside `color-mix()` or a gradient -- which is how the
+   * base rule below paints its wash and how the category strike draws its rule.
+   * The mechanism is not understood; it is not the reference chain, since
+   * `--color-alarm` is a plain hex and fails the same way on the sibling. What
+   * is established is the symptom and the shape that works, both read off the
+   * rendered pixels in the harness rather than assumed.
+   */
+  background-image: linear-gradient(var(--color-accent-text), var(--color-accent-text));
 }
 
 .turnbar.on .turnbar-caret {

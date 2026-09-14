@@ -1,6 +1,7 @@
 import type { Completion, CreateTaskInput, Task, TaskFrequency, Turn } from '@/entities'
 import {
   FREQUENCIES,
+  LAST_TURN,
   TURNS,
   addPeriods,
   addWeeks,
@@ -1010,9 +1011,10 @@ export class TaskUseCases {
    * path -- the caller already holds the count.
    */
   dueByNow(task: Task, referenceDate: Date = new Date(), now: Date = new Date()): number {
-    // Gated on the frequency as well as the plan, the way `appearsOn` is: a
-    // hand-edited document carrying turns on a weekly task still behaves.
-    if (task.frequency !== 'daily' || task.turns.length === 0) return 0
+    // Gated on the frequency the way `appearsOn` is, for a hand-edited document
+    // carrying turns on a task whose cadence is not a day. Only a DAY can run
+    // out of turns, which is what everything below measures against.
+    if (task.frequency !== 'daily') return 0
 
     const refKey = periodKey('daily', referenceDate)
     const todayKey = periodKey('daily', now)
@@ -1030,6 +1032,25 @@ export class TaskUseCases {
     // "existed" all day and its Manha slot would be born overdue. The same guard
     // `isLateOn` carries for the weekday, one cadence finer.
     const floor = createdKey === refKey ? turnOf(task.createdAt) : 1
+
+    /*
+     * A task with NO turn has no deadline inside the day, so it is given one at
+     * the START of the last turn: past that the day is running out, and a daily
+     * task still open at nightfall is behind whatever it was going to be.
+     *
+     * Deliberately not the same rule as a Noite SLOT, which is never late on its
+     * own day. A Noite slot has an explicit deadline -- the end of the day --
+     * and is being kept to it; an untimed task has none, so the evening is the
+     * warning it would otherwise never get.
+     *
+     * The guard is the `floor`'s counterpart: a task created after nightfall
+     * never had the day, so it is not born overdue tonight.
+     */
+    if (task.turns.length === 0) {
+      const closing = refKey < todayKey || turnOf(now) === LAST_TURN
+      const bornAtDusk = createdKey === refKey && turnOf(task.createdAt) === LAST_TURN
+      return closing && !bornAtDusk ? task.timesPerPeriod : 0
+    }
 
     // Order-independent: an unsorted plan cannot produce a wrong figure here, so
     // nothing has to re-sort defensively on read.
