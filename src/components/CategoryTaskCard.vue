@@ -118,6 +118,14 @@ const spotlit = computed(() => rows.value.some((row) => row.spotlit))
 const activeTasks = computed(() => props.tasks.filter((task) => task.active))
 const checks = computed(() => store.checkTally(activeTasks.value, referenceDate.value))
 const hasRatio = computed(() => activeTasks.value.length > 0)
+/**
+ * Every active task in the unit has reached its target. Counted off the shared
+ * tally rather than the rows, so the card cannot disagree with the ratio in its
+ * own head, and `total > 0` keeps a unit holding nothing but inactive tasks --
+ * which has no ratio to give -- from reading as finished.
+ */
+const settled = computed(() => checks.value.total > 0 && checks.value.done >= checks.value.total)
+
 const progress = computed(() =>
   checks.value.total === 0 ? 0 : (checks.value.done / checks.value.total) * 100,
 )
@@ -133,6 +141,7 @@ const progress = computed(() =>
     class="unit"
     :class="{
       unfiled: !category,
+      settled,
       stood: spotlight && !spotlit,
       [`spot-${spotlight}`]: !!spotlight,
     }"
@@ -142,10 +151,13 @@ const progress = computed(() =>
       <!-- The head names the category and is the way into its page; the
            unfiled bucket is not a category and has none. -->
       <h2 class="unit-name ink-text" :title="category?.description || undefined">
-        <RouterLink v-if="category" :to="`/categories/${category.id}`" class="unit-link">
-          {{ category.name }}
-        </RouterLink>
-        <template v-else>Sem categoria</template>
+        <RouterLink
+          v-if="category"
+          :to="`/categories/${category.id}`"
+          class="unit-link unit-label"
+          >{{ category.name }}</RouterLink
+        >
+        <span v-else class="unit-label">Sem categoria</span>
       </h2>
       <span v-if="hasRatio" class="unit-count figure">
         {{ checks.done }}<span class="unit-slash">/</span>{{ checks.total }}
@@ -317,6 +329,32 @@ const progress = computed(() =>
 
 .unit.unfiled .unit-name {
   @apply text-fg-faint;
+}
+
+/*
+ * The whole module kept: the category's name is ruled through in the done ink,
+ * the same green the task titles and the kept turn chips take.
+ *
+ * Drawn as a background gradient sized from 0 rather than as `text-decoration`,
+ * for two reasons: a decoration cannot be transitioned, so the last check-off
+ * would snap the line on; and this sizes to the TEXT, where a pseudo-element on
+ * `.unit-name` would span the whole flexed head. It rides the inline label in
+ * both branches, so the unfiled bucket settles the same way a category does.
+ *
+ * On a card that is already settled at first paint there is no transition to
+ * run, so it simply renders struck -- the sweep belongs to the check-off that
+ * earned it, not to every page load.
+ */
+.unit-label {
+  background-image: linear-gradient(var(--color-done), var(--color-done));
+  background-repeat: no-repeat;
+  background-position: 0 52%;
+  background-size: 0% 2px;
+  transition: background-size 460ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.unit.settled .unit-label {
+  background-size: 100% 2px;
 }
 
 .unit-count {

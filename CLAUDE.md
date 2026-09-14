@@ -428,6 +428,18 @@ layers.
   - Every row is resolved ONCE into a view model (count, completion, `dueByNow`, `turnState`,
     turn groups). Each of those walks the task's check-offs, and the template used to ask five
     of them per row, the count twice over for the stamp and the gauge.
+  - **A unit whose every ACTIVE task is kept rules its own name through**, in the done ink, the
+    same green the task titles and the kept turn chips take. Counted off the shared `checkTally`
+    rather than the rows, so the strike cannot disagree with the ratio in the head beside it,
+    and gated on `total > 0` so a unit holding nothing but inactive tasks -- which has no ratio
+    to give -- does not read as finished.
+    - The rule is a **background gradient sized from 0**, not `text-decoration`, for two
+      reasons: a decoration cannot be transitioned, so the last check-off would snap the line
+      on; and this sizes to the TEXT, where a pseudo-element on `.unit-name` would span the
+      whole flexed head. It rides an inline `.unit-label` present in both branches, so the
+      unfiled bucket settles exactly as a category does.
+    - There is no transition to run on a card already settled at first paint, so it simply
+      renders struck. The sweep belongs to the check-off that earned it, not to every page load.
   - **A late row is the panel's other annunciator.** It takes an alarm rail INSIDE the category's
     own (never flush with it, or the two read as one thick edge), a wash running off to the right
     so the left margin the eye scans is lit without tinting the title, an `Atrasada` chip and a
