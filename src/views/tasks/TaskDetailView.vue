@@ -82,10 +82,15 @@ const isLate = computed(() =>
   task.value ? store.isLateOn(task.value, referenceDate.value, today.value) : false,
 )
 
-/** The turns whose deadline has passed with the slot still open, for the chips. */
-const lateTurnSet = computed(
-  () => new Set(task.value ? store.lateTurns(task.value, referenceDate.value, today.value) : []),
+/** What the clock has to say about this task's slots, for the chips and the gauge. */
+const turnState = computed(() =>
+  task.value
+    ? store.turnState(task.value, referenceDate.value, today.value)
+    : { late: [], current: [] },
 )
+
+const lateTurnSet = computed(() => new Set(turnState.value.late))
+const currentTurnSet = computed(() => new Set(turnState.value.current))
 
 /**
  * The whole reading of the task's past: streaks, adherence, the run chart, the
@@ -200,7 +205,9 @@ function toggleActive() {
             :key="group.turn"
             :turn="group.turn"
             :count="group.count"
+            :done="count >= group.doneAt"
             :late="lateTurnSet.has(group.turn)"
+            :current="currentTurnSet.has(group.turn)"
           />
           <span v-if="task.timesPerPeriod > 1" class="chip figure">
             {{ TIMES_PER_PERIOD_LABELS[task.frequency].toLowerCase() }}: {{ task.timesPerPeriod }}
@@ -228,6 +235,7 @@ function toggleActive() {
               :total="task.timesPerPeriod"
               :slots="turnSlots(task.turns, task.timesPerPeriod)"
               :due="store.dueByNow(task, referenceDate, today)"
+              :current-turn="turnState.current[0]"
               class="mt-1"
               @set="(value) => store.setCompletionCount(task!.id, value, referenceDate)"
               @undo="store.undoCompletion(task!.id, referenceDate)"

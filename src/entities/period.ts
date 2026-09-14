@@ -158,11 +158,18 @@ export function turnSlots(turns: Turn[], timesPerPeriod: number): (Turn | undefi
 export function turnPlan(
   turns: Turn[],
   timesPerPeriod: number,
-): { groups: { turn: Turn; count: number }[]; untimed: number } {
-  const groups = TURNS.map((turn) => ({
-    turn,
-    count: turns.filter((entry) => entry === turn).length,
-  })).filter((group) => group.count > 0)
+): { groups: { turn: Turn; count: number; doneAt: number }[]; untimed: number } {
+  // Slots are sorted, so each turn's slots are contiguous and `doneAt` is just
+  // the running total: the check-off count at which this group is fully covered.
+  // Keeping that sum here rather than in the views is what stops the positional
+  // crediting rule from being re-derived, slightly differently, in each of them.
+  let filled = 0
+
+  const groups = TURNS.map((turn) => {
+    const count = turns.filter((entry) => entry === turn).length
+    filled += count
+    return { turn, count, doneAt: filled }
+  }).filter((group) => group.count > 0)
 
   return { groups, untimed: Math.max(0, timesPerPeriod - turns.length) }
 }

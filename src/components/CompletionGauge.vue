@@ -22,8 +22,10 @@ const props = withDefaults(
     slots?: (Turn | undefined)[]
     /** How many slots the day has already asked for -- `TaskUseCases.dueByNow`. */
     due?: number
+    /** The turn the clock is in, when the browsed day is today. */
+    currentTurn?: Turn
   }>(),
-  { readonly: false, slots: () => [], due: 0 },
+  { readonly: false, slots: () => [], due: 0, currentTurn: undefined },
 )
 defineEmits<{ set: [count: number]; undo: [] }>()
 
@@ -79,6 +81,7 @@ const description = computed(() => `${filled.value} de ${props.total} marcacoes`
           on: n <= filled,
           next: !readonly && n === filled + 1,
           overdue: n > filled && n <= dueCells,
+          now: currentTurn !== undefined && n > filled && slots[n - 1] === currentTurn,
           'group-start': opensGroup(n),
         }"
         :disabled="readonly"
@@ -172,6 +175,16 @@ const description = computed(() => `${filled.value} de ${props.total} marcacoes`
 .cell.overdue {
   border-color: var(--color-alarm);
   background-color: var(--color-alarm-dim);
+}
+
+/*
+ * A chamber the running turn is asking for. Sits alongside `.next` rather than
+ * replacing it: `next` marks the ONE cell a tap would fill, this marks every
+ * cell the hour wants.
+ */
+.cell.now {
+  border-color: var(--color-accent-text);
+  background-color: var(--color-accent-dim);
 }
 
 /* The seam between two turns. The strip reads as groups in the order the chips

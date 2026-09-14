@@ -15,8 +15,10 @@ const props = withDefaults(
     disabled?: boolean
     /** A deadline inside the period has passed with the dial still open. */
     late?: boolean
+    /** The turn the clock is in is asking for this one. */
+    now?: boolean
   }>(),
-  { disabled: false, late: false },
+  { disabled: false, late: false, now: false },
 )
 defineEmits<{ advance: [] }>()
 
@@ -50,7 +52,7 @@ const checkedState = computed(() =>
     type="button"
     role="checkbox"
     class="lock"
-    :class="{ late }"
+    :class="{ late, now }"
     :disabled="disabled"
     :aria-checked="checkedState"
     :aria-label="label"
@@ -109,6 +111,18 @@ const checkedState = computed(() =>
   fill: none;
   stroke: var(--color-line-strong);
   stroke-width: 2;
+}
+
+/*
+ * The running turn lights the same instrument in the accent. Only the TRACK,
+ * never the ring's ground: that is what hover and focus use, and a permanently
+ * tinted ring would read as a stuck hover state.
+ *
+ * Declared before the fault's rule so `late` wins at equal specificity when a
+ * row is both -- a missed morning outranks a running afternoon.
+ */
+.lock.now .track {
+  stroke: var(--color-accent-text);
 }
 
 /*

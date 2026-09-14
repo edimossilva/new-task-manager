@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { Category, Task, Turn } from '@/entities'
+import type { Category, Task } from '@/entities'
 import { INKS, formatDate, turnPlan, turnSlots } from '@/entities'
 import { useTaskStore } from '@/stores/task-store'
 import { usePeriodSelection } from '@/composables/use-period-selection'
@@ -23,6 +23,11 @@ const props = defineProps<{
   tasks: Task[]
   /** Position in the rack, used only to stagger the reveal. */
   index: number
+  /**
+   * Which readout is holding the page, if any. The card lights the rows it
+   * counts and stands the rest down.
+   */
+  spotlight?: 'late' | 'now' | null
 }>()
 
 const store = useTaskStore()
@@ -45,39 +50,53 @@ const inkVars = computed(() => {
   }
 })
 
-function isCompleted(task: Task): boolean {
-  return store.isCompletedFor(task, referenceDate.value)
-}
-
 /*
- * `today` is passed as the clock on purpose. A turn's deadline passes during the
+ * Every row resolved ONCE. Each of these questions walks the task's check-offs,
+ * and the template used to ask five of them per row -- the count twice over, for
+ * the stamp and for the gauge.
+ *
+ * `today` is the clock rather than `referenceDate`: a turn passes during the
  * browsed day, and a pinned `referenceDate` deliberately does not subscribe to
- * the tick -- without this the chip would freeze at the turn it first rendered in.
+ * the tick, so without it a row would freeze in the turn it first rendered in.
  */
-function isLate(task: Task): boolean {
-  return store.isLateOn(task, referenceDate.value, today.value)
-}
+const rows = computed(() =>
+  props.tasks.map((task) => {
+    const count = store.completionCountFor(task, referenceDate.value)
+    const state = store.turnState(task, referenceDate.value, today.value)
+    const late = new Set(state.late)
+    const current = new Set(state.current)
 
-/** The turns already asked for with the slot still open -- WHICH turn is late. */
-function lateTurnsOf(task: Task): Turn[] {
-  return store.lateTurns(task, referenceDate.value, today.value)
-}
+    // An inactive task is out of the routine, so the clock has no claim on it.
+    // Its chip already reads `Inativa`; without this the row would still wear
+    // the rail of a state the chip is not showing.
+    const live = task.active
+    const isLate = live && store.isLateOn(task, referenceDate.value, today.value)
+    const isNow = live && current.size > 0
 
-function turnGroups(task: Task) {
-  const late = new Set(lateTurnsOf(task))
-  return turnPlan(task.turns, task.timesPerPeriod).groups.map((group) => ({
-    ...group,
-    late: late.has(group.turn),
-  }))
-}
-
-function dueOf(task: Task): number {
-  return store.dueByNow(task, referenceDate.value, today.value)
-}
-
-function countOf(task: Task): number {
-  return store.completionCountFor(task, referenceDate.value)
-}
+    return {
+      task,
+      count,
+      completed: count >= task.timesPerPeriod,
+      due: store.dueByNow(task, referenceDate.value, today.value),
+      isLate,
+      isNow,
+      // What the lit readout is pointing at. `isNow` already means an OPEN slot
+      // in the running turn, so "not checked" needs no second test.
+      spotlit: props.spotlight === 'late' ? isLate : props.spotlight === 'now' ? isNow : false,
+      currentTurn: state.current[0],
+      slots: turnSlots(task.turns, task.timesPerPeriod),
+      groups: turnPlan(task.turns, task.timesPerPeriod).groups.map((group) => ({
+        ...group,
+        // Every slot of this turn covered. Mutually exclusive with the other two
+        // by construction: a covered group is in neither the late nor the open
+        // slice `turnState` builds.
+        done: count >= group.doneAt,
+        late: live && late.has(group.turn),
+        current: live && current.has(group.turn),
+      })),
+    }
+  }),
+)
 
 /*
  * The head's ratio is a reading of the WORK, so it counts active tasks only. A
@@ -89,6 +108,13 @@ function countOf(task: Task): number {
  * card reading zero until the task lands. Where nothing repeats, every task is
  * worth one check and the ratio is the task count it always was.
  */
+/*
+ * A unit holding nothing the lit readout counts stands down as a whole, so the
+ * eye can skip the card rather than read every row in it. Inside a unit that
+ * does hold one, only the rows that are not it dim.
+ */
+const spotlit = computed(() => rows.value.some((row) => row.spotlit))
+
 const activeTasks = computed(() => props.tasks.filter((task) => task.active))
 const checks = computed(() => store.checkTally(activeTasks.value, referenceDate.value))
 const hasRatio = computed(() => activeTasks.value.length > 0)
@@ -103,7 +129,15 @@ const progress = computed(() =>
     the readout under it is that category's own progress for the browsed period,
     and the tasks are the ruled rows of the module.
   -->
-  <section class="unit" :class="{ unfiled: !category }" :style="{ ...inkVars, '--i': index }">
+  <section
+    class="unit"
+    :class="{
+      unfiled: !category,
+      stood: spotlight && !spotlit,
+      [`spot-${spotlight}`]: !!spotlight,
+    }"
+    :style="{ ...inkVars, '--i': index }"
+  >
     <header class="unit-head">
       <!-- The head names the category and is the way into its page; the
            unfiled bucket is not a category and has none. -->
@@ -137,55 +171,73 @@ const progress = computed(() =>
 
     <TransitionGroup tag="ul" name="task" class="unit-list">
       <li
-        v-for="task in tasks"
-        :key="task.id"
+        v-for="row in rows"
+        :key="row.task.id"
         class="task"
-        :class="{ off: !task.active, late: isLate(task) }"
+        :class="{
+          off: !row.task.active,
+          late: row.isLate,
+          now: row.isNow,
+          spot: row.spotlit,
+          stood: spotlight && !row.spotlit,
+        }"
       >
         <TaskStamp
-          :task="task"
-          :count="countOf(task)"
+          :task="row.task"
+          :count="row.count"
           :period-label="formatDate(referenceDate)"
-          :disabled="!task.active"
-          :late="isLate(task)"
-          @advance="store.advanceCompletion(task.id, referenceDate)"
+          :disabled="!row.task.active"
+          :late="row.isLate"
+          :now="row.isNow"
+          @advance="store.advanceCompletion(row.task.id, referenceDate)"
         />
 
         <div class="task-body">
-          <p class="task-title" :class="{ struck: isCompleted(task) }">{{ task.title }}</p>
+          <p class="task-title" :class="{ struck: row.completed }">{{ row.task.title }}</p>
 
           <CompletionGauge
-            v-if="task.timesPerPeriod > 1"
-            :count="countOf(task)"
-            :total="task.timesPerPeriod"
-            :slots="turnSlots(task.turns, task.timesPerPeriod)"
-            :due="dueOf(task)"
+            v-if="row.task.timesPerPeriod > 1"
+            :count="row.count"
+            :total="row.task.timesPerPeriod"
+            :slots="row.slots"
+            :due="row.due"
+            :current-turn="row.currentTurn"
             class="mt-1"
-            @set="(count) => store.setCompletionCount(task.id, count, referenceDate)"
-            @undo="store.undoCompletion(task.id, referenceDate)"
+            @set="(count) => store.setCompletionCount(row.task.id, count, referenceDate)"
+            @undo="store.undoCompletion(row.task.id, referenceDate)"
           />
 
           <!-- Dropped entirely when there is nothing to say, rather than
                spending its top margin on an empty line. -->
           <div
-            v-if="task.weekday || task.turns.length || !task.active || isLate(task)"
+            v-if="row.task.weekday || row.task.turns.length || !row.task.active || row.isLate"
             class="task-tags"
           >
-            <WeekdayBadge v-if="task.weekday" :weekday="task.weekday" />
+            <WeekdayBadge v-if="row.task.weekday" :weekday="row.task.weekday" />
             <!--
               A row can never carry both: a weekday implies weekly, a turn
               implies daily. A 1x task has no gauge to edge, so the chip is the
               only place its turn can be read.
             -->
             <TurnBadge
-              v-for="group in turnGroups(task)"
+              v-for="group in row.groups"
               :key="group.turn"
               :turn="group.turn"
               :count="group.count"
+              :done="group.done"
               :late="group.late"
+              :current="group.current"
             />
-            <span v-if="!task.active" class="task-off">Inativa</span>
-            <span v-else-if="isLate(task)" class="task-late">Atrasada</span>
+            <!--
+              Inativa outranks Atrasada: the clock has no claim on a task that is
+              out of the routine. There is deliberately no chip for the RUNNING
+              turn -- the rail, the accented turn badge and the gauge's lit cells
+              already say it three times, and a fourth in words would be the
+              loudest of the four for the mildest of the states. A fault earns a
+              word; being on time does not.
+            -->
+            <span v-if="!row.task.active" class="task-off">Inativa</span>
+            <span v-else-if="row.isLate" class="task-late">Atrasada</span>
           </div>
         </div>
 
@@ -196,7 +248,7 @@ const progress = computed(() =>
           belong to the registry. Pulled up out of the row's padding so a 44px
           target does not make every row taller than its stamp.
         -->
-        <TaskInfoLink :task="task" class="-my-2 -mr-1.5" />
+        <TaskInfoLink :task="row.task" class="-my-2 -mr-1.5" />
       </li>
     </TransitionGroup>
   </section>
@@ -311,6 +363,131 @@ const progress = computed(() =>
  */
 .task.late {
   background-image: linear-gradient(90deg, var(--color-alarm-dim), transparent 62%);
+}
+
+/*
+ * THE SPOTLIGHT. Tapping a readout above turns the page into an answer to that
+ * one question: the rows it counts are lit and lifted, everything else stands
+ * down. `--spot-ink` is set by which readout is holding the page, so one set of
+ * rules serves both and the fault cannot borrow the accent or the reverse.
+ *
+ * `z-index` because a lit row's ring has to cross its neighbours' borders, and
+ * the unit clips at 14px of padding, which is why the bloom stays modest.
+ */
+.unit.spot-late {
+  --spot-ink: var(--color-alarm);
+  --spot-glow: var(--color-alarm-dim);
+}
+
+.unit.spot-now {
+  --spot-ink: var(--color-accent-text);
+  --spot-glow: var(--color-accent-dim);
+}
+
+.task.spot {
+  @apply relative z-[1];
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--spot-ink) 22%, transparent),
+    color-mix(in srgb, var(--spot-ink) 7%, transparent)
+  );
+  box-shadow:
+    0 0 0 2px var(--spot-ink),
+    0 0 12px var(--spot-glow);
+  animation: spot-strike 620ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/*
+ * Stood down, not hidden: still legible, still tappable. Dimming the whole unit
+ * when it holds nothing is what lets the eye skip a card instead of reading it.
+ */
+.task.stood {
+  @apply opacity-30;
+}
+
+.unit.stood {
+  @apply opacity-40;
+}
+
+.task,
+.unit {
+  transition:
+    opacity 260ms ease,
+    box-shadow 260ms ease;
+}
+
+/* Two beats, then it settles: the strike is what makes the answer findable. */
+@keyframes spot-strike {
+  0% {
+    box-shadow:
+      0 0 0 2px var(--spot-ink),
+      0 0 0 0 var(--spot-glow);
+  }
+  35% {
+    box-shadow:
+      0 0 0 3px var(--spot-ink),
+      0 0 0 9px var(--spot-glow);
+  }
+  70% {
+    box-shadow:
+      0 0 0 2px var(--spot-ink),
+      0 0 0 0 var(--spot-glow);
+  }
+  100% {
+    box-shadow:
+      0 0 0 2px var(--spot-ink),
+      0 0 12px var(--spot-glow);
+  }
+}
+
+/*
+ * The turn the clock is in, one notch under the fault: the same lamp geometry in
+ * the accent, and NO row wash. The wash is what makes a late row shout, and a
+ * morning where every task is Manha-pinned would otherwise light the whole rack.
+ *
+ * `late` wins when a row is somehow both -- a fault outranks a prompt -- which
+ * the source order here settles at equal specificity.
+ */
+/*
+ * A SHORT field, where the fault's runs to 62%. Both rows are lit, and the one
+ * that reaches further across the title is the one that went wrong -- so they
+ * stay separable even when the user's accent is a red.
+ */
+.task.now {
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--color-accent-text) 13%, transparent),
+    transparent 34%
+  );
+}
+
+.task.now::before {
+  @apply absolute inset-y-0 pointer-events-none;
+  content: '';
+  left: -14px;
+  width: 14px;
+  border-left: 3px solid var(--color-accent-text);
+  background: color-mix(in srgb, var(--color-accent-text) 20%, transparent);
+}
+
+/*
+ * The pointer that makes this state legible without a word for it.
+ *
+ * The accent is USER-CHOSEN and can land anywhere on the wheel, including next
+ * to the alarm, so hue alone cannot separate 'running' from 'missed'. Shape can:
+ * the fault is a flat lit field, this is a mark aimed at one row. It sits at the
+ * dial's own height, so it points at the control you would tap.
+ */
+.task.now::after {
+  @apply absolute pointer-events-none;
+  content: '';
+  left: -11px;
+  top: 15px;
+  width: 0;
+  height: 0;
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  border-left: 7px solid var(--color-accent-text);
 }
 
 /*

@@ -197,6 +197,14 @@ const TIMELINE_PERIODS: Record<TaskFrequency, number> = {
 /** Weeks in the daily heatmap: a season, and 18 columns still fit a phone. */
 const HEAT_WEEKS = 18
 
+/** What the clock has to say about a task's pinned slots, as `turnState` reports it. */
+export interface TurnState {
+  /** Slots whose turn is over with the check-off still missing. */
+  late: Turn[]
+  /** Slots pinned to the turn that is running right now. */
+  current: Turn[]
+}
+
 /** One period's worth of check-offs, as `completionHistory` reports it. */
 export interface CompletionPeriod {
   key: string
@@ -1034,15 +1042,35 @@ export class TaskUseCases {
   }
 
   /**
-   * The turns of the slots already asked for and still unfilled -- what the row
-   * needs to say WHICH turn it missed, where `Atrasada` says only that it did.
+   * Which of a task's pinned slots the clock has something to say about: the
+   * ones it has already missed, and the ones the running turn is asking for.
    *
-   * A slice, because slots are sorted and crediting is positional: the first
-   * `count` of them are the ones the day's check-offs have filled.
+   * One method rather than two, because both halves come out of the same
+   * `completionCountFor` and `dueByNow` and the row needs both -- a figure
+   * computed twice is a figure that can drift.
+   *
+   * The two are disjoint by construction: every late turn is strictly before the
+   * running one, every current turn equals it. A finished task has no open slots
+   * and so can be neither.
    */
-  lateTurns(task: Task, referenceDate: Date = new Date(), now: Date = new Date()): Turn[] {
+  turnState(task: Task, referenceDate: Date = new Date(), now: Date = new Date()): TurnState {
+    // Gated like `dueByNow`, for a hand-edited document carrying turns on a
+    // task whose cadence is not a day.
+    if (task.frequency !== 'daily') return { late: [], current: [] }
+
     const count = this.completionCountFor(task, referenceDate)
-    return task.turns.slice(count, this.dueByNow(task, referenceDate, now))
+    // Crediting is positional, so the first `count` slots are the covered ones.
+    const open = task.turns.slice(count)
+    const late = task.turns.slice(count, this.dueByNow(task, referenceDate, now))
+
+    // A running turn is a claim about the PRESENT, so it holds only while the
+    // browsed day IS today -- it says nothing about a day already over.
+    // That is why it cannot lean on `dueByNow`, whose past-day rule is the
+    // opposite: a finished day asked for everything.
+    const running =
+      periodKey('daily', referenceDate) === periodKey('daily', now) ? turnOf(now) : undefined
+
+    return { late, current: running ? open.filter((turn) => turn === running) : [] }
   }
 
   /**

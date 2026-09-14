@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import type { Task } from '@/entities'
-import { FREQUENCIES, FREQUENCY_LABELS, formatDate } from '@/entities'
+import { FREQUENCIES, FREQUENCY_LABELS, TURN_LABELS, formatDate, turnOf } from '@/entities'
 import { useAuthStore } from '@/stores/auth-store'
 import { useTaskStore } from '@/stores/task-store'
 import { useCategoryStore } from '@/stores/category-store'
@@ -33,26 +33,51 @@ const visibleTasks = computed(() =>
 )
 
 /**
- * The overdue set, resolved ONCE per render. `isLateOn` walks a task's
- * check-offs, and the sort below calls its comparator O(n log n) times -- asking
- * the question inside it would re-walk the same completions on every comparison.
+ * What the clock says about each task, resolved ONCE per render. Both questions
+ * walk a task's check-offs, and the sort below calls its comparator O(n log n)
+ * times -- asking inside it would re-walk the same completions every comparison.
  *
  * `today` is the clock rather than `referenceDate`, so a turn passing re-sorts
  * the band on the tick even with a day pinned. See `CategoryTaskCard`.
+ *
+ * `isLateOn` rather than `turnState.late`, because it also carries the weekly
+ * task's weekday rule, which has nothing to do with turns.
  */
-const lateIds = computed(
-  () =>
-    new Set(
-      visibleTasks.value
-        .filter((task) => store.isLateOn(task, referenceDate.value, today.value))
-        .map((task) => task.id),
-    ),
-)
+const turnCensus = computed(() => {
+  const late = new Set<string>()
+  const current = new Set<string>()
 
-/** Atrasada, then pending, then done -- the same order the tasks page defaults to. */
+  for (const task of visibleTasks.value) {
+    if (store.isLateOn(task, referenceDate.value, today.value)) late.add(task.id)
+    // The two sets deliberately OVERLAP. A task whose morning was missed and
+    // whose afternoon is running is honestly in both -- 'what did I miss' and
+    // 'what is due now' are different questions, and it is the answer to each.
+    if (
+      task.frequency === 'daily' &&
+      store.turnState(task, referenceDate.value, today.value).current.length
+    ) {
+      current.add(task.id)
+    }
+  }
+
+  return { late, current }
+})
+
+const lateCount = computed(() => turnCensus.value.late.size)
+const nowCount = computed(() => turnCensus.value.current.size)
+
+/** The turn the clock is in, and only while the browsed day is today. */
+const runningTurn = computed(() => (isToday.value ? turnOf(today.value) : undefined))
+
+/**
+ * Atrasada, then what the running turn is asking for, then the rest of what is
+ * pending, then done. The sort carries the same message the rails do: what you
+ * missed on top, what you should be doing right now under it.
+ */
 function statusRank(task: Task): number {
-  if (isCompleted(task)) return 2
-  return lateIds.value.has(task.id) ? 0 : 1
+  if (isCompleted(task)) return 3
+  if (turnCensus.value.late.has(task.id)) return 0
+  return turnCensus.value.current.has(task.id) ? 1 : 2
 }
 
 /**
@@ -92,7 +117,7 @@ const bands = computed(() =>
       hasRepeats: tasks.some((task) => task.timesPerPeriod > 1),
       // Which horizon is actually in trouble: a count in the band head says it
       // where the gauge above can only say how much is left.
-      late: tasks.filter((task) => lateIds.value.has(task.id)).length,
+      late: tasks.filter((task) => turnCensus.value.late.has(task.id)).length,
       // The rule takes the frequency's own ink, then burns off.
       ink: { '--band-ink': `var(--color-freq-${frequency})` },
       rack: buildCategoryRack(tasks, categoryStore.categories),
@@ -100,15 +125,41 @@ const bands = computed(() =>
   }).filter((band) => band.tasks.total > 0),
 )
 
+/**
+ * Which readout is holding the page. Ephemeral view state, so it lives here in a
+ * ref and travels down as a prop rather than into a store.
+ *
+ * Cleared when the browsed day changes: the sets are computed against a date,
+ * and a spotlight left on from Monday would be lighting a different answer.
+ */
+const spotlight = ref<'late' | 'now' | null>(null)
+
+function toggleSpotlight(which: 'late' | 'now') {
+  spotlight.value = spotlight.value === which ? null : which
+}
+
+watch(referenceDate, () => {
+  spotlight.value = null
+})
+
 const firstName = computed(() => authStore.user?.displayName?.split(' ')[0] ?? '')
 
-const lateCount = computed(() => lateIds.value.size)
+/**
+ * The eyebrow names the turn the clock is in, which is what makes the accented
+ * rows under it legible. Only while browsing today: a turn is running now or it
+ * is not running at all.
+ */
+const eyebrow = computed(() =>
+  isToday.value
+    ? `Hoje \u00b7 ${TURN_LABELS[turnOf(today.value)]}`
+    : formatDate(referenceDate.value),
+)
 </script>
 
 <template>
   <header class="flex items-start justify-between gap-3 mb-5">
     <div class="min-w-0">
-      <p class="eyebrow">{{ isToday ? 'Hoje' : formatDate(referenceDate) }}</p>
+      <p class="eyebrow">{{ eyebrow }}</p>
       <h1 class="!mb-0 truncate">Ola, {{ firstName }}</h1>
     </div>
     <RouterLink to="/tasks/new" class="btn shrink-0">Nova</RouterLink>
@@ -125,17 +176,61 @@ const lateCount = computed(() => lateIds.value.size)
       warning rather than as another gauge. Dropped entirely when nothing is
       late: an annunciator that is always lit annunciates nothing.
     -->
-    <Transition name="annunciator">
-      <section v-if="lateCount" class="annunciator" role="status">
-        <span class="annunciator-lamp" aria-hidden="true"></span>
-        <p class="annunciator-text">
-          <span class="annunciator-count figure">{{ lateCount }}</span>
-          {{ lateCount === 1 ? 'tarefa atrasada' : 'tarefas atrasadas' }}
-        </p>
-        <!-- Decorative, and the first thing to go when the line gets tight. -->
-        <span class="annunciator-note figure" aria-hidden="true">prazo vencido</span>
-      </section>
-    </Transition>
+    <!--
+      The two readouts are ONE block, flush, sharing a seam: a panel with two
+      lamps rather than a stack of notices. Faults on top, what is live under it.
+    -->
+    <div v-if="lateCount || (runningTurn && nowCount)" class="annunciators">
+      <Transition name="annunciator">
+        <button
+          v-if="lateCount"
+          type="button"
+          class="annunciator"
+          :class="{ on: spotlight === 'late' }"
+          :aria-pressed="spotlight === 'late'"
+          :aria-label="`Destacar ${lateCount} ${lateCount === 1 ? 'tarefa atrasada' : 'tarefas atrasadas'}`"
+          @click="toggleSpotlight('late')"
+        >
+          <span class="annunciator-lamp" aria-hidden="true"></span>
+          <p class="annunciator-text">
+            <span class="annunciator-count figure">{{ lateCount }}</span>
+            {{ lateCount === 1 ? 'atrasada' : 'atrasadas' }}
+          </p>
+        </button>
+      </Transition>
+
+      <!--
+        The running turn's own readout, under the fault and above the gauges:
+        the panel reports what is wrong first, then what is live. Its lamp is
+        the SAME caret the rows wear in their gutter, so the figure here and the
+        marks down the page are visibly one instrument -- every row carrying
+        that caret is one of the N counted here.
+
+        Both segments are BUTTONS: tapping one spotlights the rows it counts.
+      -->
+      <Transition name="annunciator">
+        <button
+          v-if="runningTurn && nowCount"
+          type="button"
+          class="turnbar"
+          :class="{ on: spotlight === 'now' }"
+          :aria-pressed="spotlight === 'now'"
+          :aria-label="`Destacar ${nowCount} ${nowCount === 1 ? 'tarefa' : 'tarefas'} para agora`"
+          @click="toggleSpotlight('now')"
+        >
+          <span class="turnbar-caret" aria-hidden="true"></span>
+          <p class="turnbar-text">
+            <span class="turnbar-count figure">{{ nowCount }}</span>
+            para agora
+          </p>
+          <!-- Names the turn the count belongs to; the first thing to go when
+               the segment gets tight. -->
+          <span class="turnbar-note figure" aria-hidden="true">
+            {{ TURN_LABELS[runningTurn] }}
+          </span>
+        </button>
+      </Transition>
+    </div>
 
     <!--
       A gauge cluster, one per horizon, instead of a single figure for the day:
@@ -201,6 +296,7 @@ const lateCount = computed(() => lateIds.value.size)
           :category="unit.category"
           :tasks="unit.tasks"
           :index="index"
+          :spotlight="spotlight"
         />
       </div>
     </section>
@@ -225,8 +321,19 @@ const lateCount = computed(() => lateIds.value.size)
  * cannot be confused. The lamp pings rather than blinks: a hard flash on a page
  * you look at every morning is punishment, a slow pulse is a panel breathing.
  */
+/*
+ * Two lamps in one housing, laid out the way the gauge cluster under it is: a
+ * wrapping row of self-sizing segments. Stacked full-width bars read as a pile
+ * of notices; side by side they read as a panel, and the page keeps its rhythm.
+ */
+.annunciators {
+  @apply flex flex-wrap gap-2.5 mt-3 mb-2.5;
+}
+
 .annunciator {
-  @apply flex items-center gap-2.5 mt-3 mb-2.5 px-3 py-2 border rounded-sm;
+  @apply flex flex-1 basis-[160px] items-center gap-2.5 px-3 py-2 border rounded-sm
+         text-left cursor-pointer transition-[background-color,box-shadow] duration-200;
+  -webkit-tap-highlight-color: transparent;
   color: var(--color-alarm);
   border-color: var(--color-alarm);
   background-color: var(--color-alarm-dim);
@@ -245,19 +352,24 @@ const lateCount = computed(() => lateIds.value.size)
 
 .annunciator-text {
   @apply flex items-baseline gap-1.5 flex-1 min-w-0
-         font-mono text-[0.6875rem] font-semibold uppercase tracking-[0.14em] truncate;
+         font-mono text-[0.6875rem] font-medium uppercase tracking-[0.14em] truncate;
 }
 
 /*
- * The figure carries the weight. Lit, this is the most urgent thing on the page,
- * and it was reading quieter than the gauges under it.
+ * Set at the label's own SIZE, so the segment is one line of panel type rather
+ * than a display figure with a caption under it, and bold so the figure is still
+ * what the eye lands on. The weight does the work the size used to.
+ *
+ * The label sits at `font-medium`, the weight every other mono micro-cap in the
+ * app already uses: 600 against 700 is a subpixel at 11px, and these two labels
+ * were the only ones wearing semibold anyway.
  */
 .annunciator-count {
-  @apply shrink-0 text-[1.125rem] leading-none font-semibold tracking-normal;
+  @apply shrink-0 font-bold tracking-normal;
 }
 
-.annunciator-note {
-  @apply hidden sm:inline shrink-0 text-[0.625rem] uppercase tracking-[0.1em] opacity-70;
+.turnbar-note {
+  @apply hidden min-[380px]:inline shrink-0 text-[0.625rem] uppercase tracking-[0.1em] opacity-70;
 }
 
 /* Slides down from under the selector, the way a lamp lights rather than appears. */
@@ -284,6 +396,88 @@ const lateCount = computed(() => lateIds.value.size)
   100% {
     box-shadow: 0 0 0 0 transparent;
   }
+}
+
+/*
+ * The running turn's bar. Deliberately NOT hatched: the diagonal stripes are the
+ * fault's own hazard signal, and a turn that is simply running is not a hazard.
+ * A clean accent ground and the caret is what separates them by SHAPE, which is
+ * the only thing that holds when the accent is a red the user picked.
+ */
+.turnbar {
+  @apply flex flex-1 basis-[160px] items-center gap-2.5 px-3 py-2 border rounded-sm
+         text-left cursor-pointer transition-[background-color,box-shadow] duration-200;
+  -webkit-tap-highlight-color: transparent;
+  color: var(--color-accent-text);
+  border-color: var(--color-accent-text);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--color-accent-text) 16%, transparent),
+    color-mix(in srgb, var(--color-accent-text) 5%, transparent)
+  );
+}
+
+/*
+ * Held down: the segment inverts to a solid ground, so the control that is
+ * holding the page says so as plainly as the page does.
+ */
+.annunciator.on {
+  color: var(--color-void);
+  background-color: var(--color-alarm);
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent 0 6px,
+    color-mix(in srgb, var(--color-void) 13%, transparent) 6px 12px
+  );
+}
+
+.annunciator.on .annunciator-lamp {
+  background: var(--color-void);
+}
+
+.turnbar.on {
+  color: var(--color-void);
+  /* Longhands, not the `background` shorthand: a shorthand whose whole value is
+     a single var() resolves invalid-at-computed-value-time here, which silently
+     drops the colour AND clears the base gradient rather than falling back. */
+  background-color: var(--color-accent-text);
+  background-image: none;
+}
+
+.turnbar.on .turnbar-caret {
+  border-left-color: var(--color-void);
+}
+
+.annunciator.on .annunciator-lamp,
+.turnbar.on .turnbar-caret,
+.annunciator.on .annunciator-count,
+.turnbar.on .turnbar-count {
+  color: var(--color-void);
+}
+
+.annunciator:focus-visible,
+.turnbar:focus-visible {
+  @apply outline-none;
+  box-shadow: 0 0 0 3px var(--color-accent-dim);
+}
+
+/* The row marker, at strip scale. Same triangle, same meaning. */
+.turnbar-caret {
+  @apply shrink-0;
+  width: 0;
+  height: 0;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 7px solid var(--color-accent-text);
+}
+
+.turnbar-text {
+  @apply flex items-baseline gap-1.5 flex-1 min-w-0
+         font-mono text-[0.6875rem] font-medium uppercase tracking-[0.14em] truncate;
+}
+
+.turnbar-count {
+  @apply shrink-0 font-bold tracking-normal;
 }
 
 /* Gauges size themselves and wrap: one horizon or five, the cluster still reads. */

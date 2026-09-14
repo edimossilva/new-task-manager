@@ -1,10 +1,11 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
-import type { CreateTaskInput, Task, Turn } from '@/entities'
+import type { CreateTaskInput, Task } from '@/entities'
 import type {
   CheckTally,
   CompletionPeriod,
   TaskInsight,
+  TurnState,
   WeekSummary,
   WeekTrendPoint,
 } from '@/usecases'
@@ -74,8 +75,8 @@ export const useTaskStore = defineStore('task', () => {
     return createUseCases().dueByNow(task, referenceDate, now)
   }
 
-  function lateTurns(task: Task, referenceDate: Date, now?: Date): Turn[] {
-    return createUseCases().lateTurns(task, referenceDate, now)
+  function turnState(task: Task, referenceDate: Date, now?: Date): TurnState {
+    return createUseCases().turnState(task, referenceDate, now)
   }
 
   function create(input: CreateTaskInput): boolean {
@@ -163,7 +164,7 @@ export const useTaskStore = defineStore('task', () => {
     isDueOn,
     isLateOn,
     dueByNow,
-    lateTurns,
+    turnState,
     create,
     update,
     setActive,

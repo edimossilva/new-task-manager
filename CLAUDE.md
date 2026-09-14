@@ -330,12 +330,25 @@ layers.
   Changing which theme is the default therefore means moving values between `@theme` and a block,
   flipping `--color-accent-text` and `.ink-text`, and updating `DEFAULT_THEME` plus the
   `theme-color` meta in `index.html` -- the light/dark decision is baked into all four. `terminal` also swaps
-  `--font-sans` to the mono face, so the whole panel becomes one readout.
+  `--font-sans` AND `--font-display` to the mono face, so the whole panel becomes one readout --
+  which is why JetBrains Mono is requested at **400;500;600;700** in `index.html`: in that theme
+  the headings are mono too, and the missing weights were being synthesised into a faux bold.
+  Every weight a rule asks for must be in that URL or the browser smears the nearest one.
 - **Fault states never wear an ink.** `--color-alarm` is the one colour the app reserves for
   "this is wrong", and `Atrasada` used to be drawn in `--color-accent-text` -- whatever the user
   picked for delight, so a green accent had the overdue tag reading as a commendation. Anything
   saying a deadline has passed (the chip, the row rail, the stamp's track, the gauge's overdue
   cells, a late `TurnBadge`, the annunciator) speaks in `--color-alarm` / `--color-alarm-dim`.
+- **The accent is the PRESENT, not a fault.** It was already used that way -- `.cell.next` edges
+  the chamber a tap would fill -- and the running turn extends it from "up next" to "on now".
+  So the row states read as one scale: `--color-alarm` for the deadline you missed,
+  `--color-accent-text` for the one running, nothing for the one still ahead. A fault outranks a
+  prompt wherever both could apply.
+- **Only the fault gets a word.** `Atrasada` is a chip; the running turn has none. The accent is
+  USER-CHOSEN and can land anywhere on the wheel, the alarm included, so a red accent makes the
+  two states the same hue -- and the word is what still tells them apart. That asymmetry is the
+  reason the fault keeps its tag and the prompt does not need one: a missed deadline is a claim
+  worth spelling out, being on time is ambient.
 - **The ink palette** (`src/entities/palette.ts`) is the single source of truth for colour:
   twenty named inks, each with **four** values. One hex cannot do four jobs -- `base` for fills,
   `deep` for the ink as TEXT on a LIGHT ground, `bright` for TEXT on a DARK ground, `dim` for
@@ -412,6 +425,9 @@ layers.
     head, a trace mixed into the hairline, and the fill of its own progress meter -- that
     category's check-offs for the browsed period, on the same hatched track the home meter uses.
     The unfiled unit has no ink, so its rail is drawn as a dashed gap and its meter goes grey.
+  - Every row is resolved ONCE into a view model (count, completion, `dueByNow`, `turnState`,
+    turn groups). Each of those walks the task's check-offs, and the template used to ask five
+    of them per row, the count twice over for the stamp and the gauge.
   - **A late row is the panel's other annunciator.** It takes an alarm rail INSIDE the category's
     own (never flush with it, or the two read as one thick edge), a wash running off to the right
     so the left margin the eye scans is lit without tinting the title, an `Atrasada` chip and a
@@ -430,14 +446,43 @@ layers.
   - The chip row is dropped entirely when a task has nothing to say there, rather than spending
     its top margin on an empty line, and the info link is pulled up out of the row's padding so a
     44px target cannot make a row taller than its 30px stamp.
-  - **The master annunciator** sits above the gauges and only when something is overdue: a
-    hazard-hatched alarm strip carrying a pulsing lamp and the count. It is the app's own
-    45-degree meter hatch coarsened from a 3px scale pitch to a 6px hazard pitch, so the two
-    cannot be confused, and the count is set large because lit, it is the most urgent thing on
-    the page and was reading quieter than the gauges under it. Each band head repeats the figure
-    for its own horizon. Dropped entirely when nothing is late -- an annunciator that is always
-    lit annunciates nothing. The lamp pings rather than blinks; the global
-    `prefers-reduced-motion` blanket settles it to a plain dot.
+  - **The annunciators** sit above the gauges: a wrapping row of self-sizing segments, laid out
+    the way the gauge cluster under them is, so the page keeps one rhythm and two stacked
+    full-width bars do not read as a pile of notices. Each segment appears only when it has
+    something to say -- an annunciator that is always lit annunciates nothing -- and a lone one
+    stretches to the full width.
+    - **Atrasadas** is hazard-hatched: the app's own 45-degree meter hatch coarsened from a 3px
+      scale pitch to a 6px hazard pitch, so a warning and a scale cannot be confused. Its lamp
+      pings rather than blinks; the global `prefers-reduced-motion` blanket settles it to a
+      plain dot. Each band head repeats the figure for its own horizon.
+    - **Para agora** is deliberately NOT hatched -- a turn that is simply running is not a
+      hazard -- and its lamp is the **same caret the rows wear in their gutter**, so the figure
+      here and the marks down the page are visibly one instrument: every row carrying that
+      caret is one of the N counted. It names its turn on the right, above 380px.
+    - The two counts **overlap on purpose**. A task whose morning was missed and whose afternoon
+      is running is in both, because "what did I miss" and "what is due now" are different
+      questions and it is the honest answer to each.
+    - The counts are set at the LABEL's own size, so each segment is one line of panel type
+      rather than a display figure with a caption under it. The lamp, the ground and the border
+      carry the readout; the number only has to be legible, and a big one competed with the
+      gauge figures directly below for no gain.
+    - **Both segments are BUTTONS, and tapping one spotlights what it counts**: its rows take a
+      ring and a lit field and strike once, every other row stands down to 30%, and a card
+      holding nothing the readout counts dims as a whole so the eye can skip it rather than read
+      every row in it. `--spot-ink` is set by whichever readout is holding the page, so one set
+      of rules serves both and the fault cannot borrow the accent or the reverse. Stood-down
+      rows stay legible and still tappable -- this is emphasis, not a filter.
+    - The spotlight is a plain `ref` in `HomeView` handed down as a prop rather than a store: it
+      is ephemeral view state. It clears when the browsed day changes, since the sets are
+      computed against a date and one left on from Monday would light a different answer.
+    - Making them buttons gave up the `role="status"` announcement, which is the right trade
+      once they are interactive: each carries an `aria-label` naming the action and
+      `aria-pressed` for the state.
+    - **`background: var(--x)` as a bare shorthand does not work here.** It resolves
+      invalid-at-computed-value-time, which silently drops the colour AND clears whatever the
+      base rule painted, rather than falling back to it. The pressed grounds use
+      `background-color` / `background-image` longhands. Worth remembering: the failure is
+      silent and looks like a specificity problem.
   - The overdue set is resolved **once per render** into a `Set` of ids. `isLateOn` walks a
     task's check-offs and the status sort calls its comparator O(n log n) times, so asking the
     question inside the comparator re-walked the same completions on every comparison.
@@ -573,6 +618,38 @@ layers.
   - `deserialize` normalizes a missing field to `[]`, which is what every document written before
     the feature means, so there is no migration. Out-of-range values are dropped the way
     `toWeekday` drops them.
+  - **Three row states, from `turnState`**: a slot whose turn is over and unticked reads
+    `Atrasada`, one pinned to the turn the clock is in is lit in the accent, one still ahead
+    today reads plain. `turnState` returns both lists from one pass because the row needs both and
+    they share a `completionCountFor` and a `dueByNow`; they are disjoint by construction, every
+    late turn being strictly before the running one and every current turn equal to it.
+    - A turn whose slots are all checked off is **flagged done**: the app's `--color-done` ink
+      and a miniature of the dial's own tick. The tick matters as much as the ink -- the accent
+      is the user's to choose and can be a green, so the checked state is marked by a SHAPE too.
+      `turnPlan` carries a `doneAt` per group (the check-off count at which it is fully covered),
+      which keeps the positional crediting rule in `period.ts` instead of re-derived per view.
+      A group only half covered is not flagged; it keeps whatever the clock says about it, and
+      the gauge below carries the granular progress.
+    - **The running turn is a claim about the PRESENT**, so it holds only while the browsed day
+      IS today.
+      It therefore cannot lean on `dueByNow`, whose past-day rule is the opposite: a day already
+      over asked for everything. Browsing back drops every accent and leaves `Atrasada` behind.
+    - It is drawn **with no chip at all**, and differs from the fault in SHAPE rather than only
+      in hue, since hue is the user's to choose and can land next to the alarm. Both rows are
+      lit, but the fault's wash runs to **62%** of the row and the running turn's to **34%** --
+      the one that reaches further across the title is the one that went wrong -- and only the
+      running turn carries a **caret** in the gutter, at the dial's own height, aimed at the
+      control you would tap.
+    - `TaskStamp` lights its dial for both, the fault winning when a row is somehow both. Only
+      the TRACK is coloured, never the ring's ground -- that is what hover and focus use, and a
+      permanently tinted ring would read as a stuck hover state.
+    - It rises in the sort, directly under `Atrasada`: missed on top, running under it, the rest
+      of what is pending below. The eyebrow names the running turn (`Hoje · Tarde`) so the
+      accented rows beneath it are legible; only while browsing today, since a turn is running
+      now or it is not running at all.
+    - An **inactive** task gets neither rail. The clock has no claim on a task that is out of
+      the routine, and its chip already reads `Inativa` -- the view gates on `active`, not the
+      use case, which stays a statement about time the way `isDueOn` and `isLateOn` do.
   - The weekly summary is untouched: turns do not change what a day ASKS for, only whether the
     asking is already overdue. That page stays a reading of volume, not of punctuality.
 - **Period selection** (`src/stores/period-store.ts`): the store owns both the live clock (`now`,
