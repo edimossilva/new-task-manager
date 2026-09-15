@@ -489,6 +489,17 @@ layers.
     - The spotlight is a plain `ref` in `HomeView` handed down as a prop rather than a store: it
       is ephemeral view state. It clears when the browsed day changes, since the sets are
       computed against a date and one left on from Monday would light a different answer.
+    - **The gauges are buttons too**, on the same contract: tapping a band's gauge spotlights
+      every row in that band -- lit in the band's own `--color-freq-*` ink through `.spot-band`,
+      which reads `--band-ink` off the stratum -- and stands the other bands' cards AND heads
+      down. The pressed gauge takes the ring-and-wash the rows take, never an inverted fill: a
+      meter drawn in the ground colour is a meter nobody can read. `Spotlight` and
+      `isBandSpotlight` live in `src/components/spotlight.ts` because the view and the card both
+      need them and a `<script setup>` block cannot export a type.
+      Lighting a band also SCROLLS to it (`#band-<frequency>`, with a `scroll-margin-top` that
+      clears the sticky masthead): the meter is above the fold and its stratum may be two screens
+      down. Releasing scrolls nowhere, and the annunciators never scroll -- their rows are spread
+      across every band, so there is no one place to go.
     - **Para agora is lit on open.** Until a segment is tapped, the ref holds `undefined` and
       the spotlight FOLLOWS the readout: `now` while that segment is on the page, nothing
       otherwise. Following rather than fixing the value is what releases it when the turn ends

@@ -100,7 +100,12 @@ function inRange(date: Date): boolean {
       </button>
     </div>
 
-    <!-- The week strip: seven thumb-sized targets, no dropdown to open. -->
+    <!--
+      The week strip: seven targets on ONE line, weekday and number side by side
+      like a tape rather than stacked like a calendar tile. The calendar is
+      there to move the day, not to be read, so it gives up height to the work
+      below it while every chip stays a full-width thumb target.
+    -->
     <ol class="strip">
       <li v-for="date in weekDays" :key="date.toISOString()">
         <button
@@ -148,15 +153,15 @@ function inRange(date: Date): boolean {
 @reference "../assets/main.css";
 
 .dial {
-  @apply mb-5;
+  @apply mb-4;
 }
 
 .dial-head {
-  @apply flex items-center gap-1 mb-2;
+  @apply flex items-center gap-1 mb-1.5;
 }
 
 .arrow {
-  @apply flex items-center justify-center w-11 h-11 shrink-0 text-xl leading-none
+  @apply flex items-center justify-center w-9 h-9 shrink-0 text-lg leading-none
          text-fg bg-transparent border border-transparent rounded-sm cursor-pointer
          transition-[color,background,border-color] duration-[120ms];
   -webkit-tap-highlight-color: transparent;
@@ -169,7 +174,7 @@ function inRange(date: Date): boolean {
 }
 
 .month-btn {
-  @apply flex items-baseline gap-1.5 min-h-11 px-1 font-display text-[1.15rem] font-semibold
+  @apply flex items-baseline gap-1.5 min-h-9 px-1 font-display text-[1rem] font-semibold
          tracking-[-0.01em] text-fg bg-transparent border-none cursor-pointer;
 }
 .month-btn:hover {
@@ -184,7 +189,7 @@ function inRange(date: Date): boolean {
 }
 
 .today-btn {
-  @apply ml-auto shrink-0 min-h-11 px-3 font-mono text-[0.625rem] font-medium uppercase
+  @apply ml-auto shrink-0 min-h-9 px-2.5 font-mono text-[0.5625rem] font-medium uppercase
          tracking-[0.12em] text-fg bg-panel border border-fg rounded-sm
          cursor-pointer transition-opacity duration-[120ms];
 }
@@ -198,7 +203,7 @@ function inRange(date: Date): boolean {
 }
 
 .chip {
-  @apply w-full flex flex-col items-center justify-center gap-0.5 py-1.5 min-h-14
+  @apply w-full flex items-baseline justify-center gap-1 px-0.5 py-1.5 min-h-9
          bg-panel border border-line-strong rounded-sm cursor-pointer
          transition-[background,border-color,color,transform] duration-[120ms];
   -webkit-tap-highlight-color: transparent;
@@ -211,11 +216,11 @@ function inRange(date: Date): boolean {
 }
 
 .chip-dow {
-  @apply font-mono text-[0.5625rem] font-medium uppercase tracking-[0.1em] text-fg-faint;
+  @apply font-mono text-[0.5rem] font-medium uppercase tracking-[0.08em] text-fg-faint;
 }
 
 .chip-num {
-  @apply font-display text-[1.05rem] leading-none font-semibold text-fg;
+  @apply font-display text-[0.9375rem] leading-none font-semibold text-fg;
 }
 
 /* Today is marked in flare even when it is not the day being viewed. */

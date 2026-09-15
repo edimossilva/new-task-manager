@@ -10,6 +10,7 @@ import TaskStamp from '@/components/TaskStamp.vue'
 import CompletionGauge from '@/components/CompletionGauge.vue'
 import TaskInfoLink from '@/components/TaskInfoLink.vue'
 import CategoryInfoLink from '@/components/CategoryInfoLink.vue'
+import { isBandSpotlight, type Spotlight } from '@/components/spotlight'
 
 /*
  * The home page's rack unit, and only that: a category's tasks at the density
@@ -27,7 +28,7 @@ const props = defineProps<{
    * Which readout is holding the page, if any. The card lights the rows it
    * counts and stands the rest down.
    */
-  spotlight?: 'late' | 'now' | null
+  spotlight?: Spotlight | null
 }>()
 
 const store = useTaskStore()
@@ -82,7 +83,14 @@ const rows = computed(() =>
       isNow,
       // What the lit readout is pointing at. `isNow` already means an OPEN slot
       // in the running turn, so "not checked" needs no second test.
-      spotlit: props.spotlight === 'late' ? isLate : props.spotlight === 'now' ? isNow : false,
+      spotlit:
+        props.spotlight === 'late'
+          ? isLate
+          : props.spotlight === 'now'
+            ? isNow
+            : props.spotlight
+              ? task.frequency === props.spotlight
+              : false,
       currentTurn: state.current[0],
       slots: turnSlots(task.turns, task.timesPerPeriod),
       groups: turnPlan(task.turns, task.timesPerPeriod).groups.map((group) => ({
@@ -143,7 +151,9 @@ const progress = computed(() =>
       unfiled: !category,
       settled,
       stood: spotlight && !spotlit,
-      [`spot-${spotlight}`]: !!spotlight,
+      'spot-late': spotlight === 'late',
+      'spot-now': spotlight === 'now',
+      'spot-band': isBandSpotlight(spotlight),
     }"
     :style="{ ...inkVars, '--i': index }"
   >
@@ -420,6 +430,12 @@ const progress = computed(() =>
 .unit.spot-now {
   --spot-ink: var(--color-accent-text);
   --spot-glow: var(--color-accent-dim);
+}
+
+/* A gauge holding the page: the band's own ink, inherited from the stratum. */
+.unit.spot-band {
+  --spot-ink: var(--band-ink);
+  --spot-glow: color-mix(in srgb, var(--band-ink) 18%, transparent);
 }
 
 .task.spot {

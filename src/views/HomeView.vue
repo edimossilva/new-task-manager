@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import type { Task } from '@/entities'
 import { FREQUENCIES, FREQUENCY_LABELS, TURN_LABELS, formatDate, turnOf } from '@/entities'
 import { useAuthStore } from '@/stores/auth-store'
@@ -10,6 +10,7 @@ import { buildCategoryRack } from '@/composables/use-category-rack'
 import { percentOf } from '@/usecases'
 import CategoryTaskCard from '@/components/CategoryTaskCard.vue'
 import PeriodSelector from '@/components/PeriodSelector.vue'
+import { isBandSpotlight, type Spotlight } from '@/components/spotlight'
 
 const authStore = useAuthStore()
 const store = useTaskStore()
@@ -143,14 +144,28 @@ const nowLit = computed(() => Boolean(runningTurn.value && nowCount.value))
  * Cleared when the browsed day changes: the sets are computed against a date,
  * and a spotlight left on from Monday would be lighting a different answer.
  */
-const spotlightChoice = ref<'late' | 'now' | null | undefined>(undefined)
+const spotlightChoice = ref<Spotlight | null | undefined>(undefined)
 
-const spotlight = computed<'late' | 'now' | null>(() =>
+const spotlight = computed<Spotlight | null>(() =>
   spotlightChoice.value === undefined ? (nowLit.value ? 'now' : null) : spotlightChoice.value,
 )
 
-function toggleSpotlight(which: 'late' | 'now') {
+function toggleSpotlight(which: Spotlight) {
   spotlightChoice.value = spotlight.value === which ? null : which
+
+  // A gauge tap that LIGHTS a band also takes the page to it: the meter sits
+  // above the fold and the stratum it reads may be two screens down, and a
+  // spotlight the user has to scroll to find is an answer left in the dark.
+  // Releasing it scrolls nowhere, and the annunciators never do -- their rows
+  // are spread across every band, so there is no one place to go.
+  if (isBandSpotlight(which) && spotlight.value === which) {
+    nextTick(() => {
+      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      document
+        .getElementById(`band-${which}`)
+        ?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' })
+    })
+  }
 }
 
 watch(referenceDate, () => {
@@ -253,24 +268,38 @@ const eyebrow = computed(() =>
       averaging them says neither. Each gauge is tinted with its own frequency
       ink, so a glance maps it to the band below without reading the label. The
       scale counts CHECK-OFFS, so partial progress on a repeating task shows.
+
+      Each gauge is a BUTTON, the same contract as the two annunciators above:
+      tapping one spotlights every row in the band it measures and stands the
+      other strata down. The meter and the stratum are one instrument.
     -->
     <section v-if="bands.length" class="gauges" aria-label="Progresso">
-      <article v-for="band in bands" :key="band.frequency" class="gauge" :style="band.ink">
-        <div class="gauge-head">
+      <button
+        v-for="band in bands"
+        :key="band.frequency"
+        type="button"
+        class="gauge"
+        :class="{ on: spotlight === band.frequency }"
+        :style="band.ink"
+        :aria-pressed="spotlight === band.frequency"
+        :aria-label="`Destacar tarefas: ${band.label}`"
+        @click="toggleSpotlight(band.frequency)"
+      >
+        <span class="gauge-head">
           <span class="gauge-label">{{ band.label }}</span>
           <span class="gauge-pct figure">{{ band.percent }}%</span>
-        </div>
-        <p class="gauge-figure figure">
+        </span>
+        <span class="gauge-figure figure">
           {{ band.done }}<span class="gauge-slash">/</span>{{ band.total }}
-        </p>
-        <div class="gauge-track">
-          <div class="gauge-fill" :style="{ width: `${band.percent}%` }"></div>
-        </div>
+        </span>
+        <span class="gauge-track">
+          <span class="gauge-fill" :style="{ width: `${band.percent}%` }"></span>
+        </span>
         <!--
           The foot is the task-level figure, kept because the two answer
           different questions: half the checks done can still be every task open.
         -->
-        <p class="gauge-foot figure">
+        <span class="gauge-foot figure">
           <template v-if="band.done >= band.total">Tudo concluido</template>
           <template v-else-if="band.hasRepeats">
             {{ band.tasks.done }}<span class="gauge-slash">/</span>{{ band.tasks.total }} tarefas
@@ -279,8 +308,8 @@ const eyebrow = computed(() =>
             {{ band.total - band.done }}
             {{ band.total - band.done === 1 ? 'restante' : 'restantes' }}
           </template>
-        </p>
-      </article>
+        </span>
+      </button>
     </section>
 
     <p v-if="bands.length === 0" class="section-empty">Nenhuma tarefa para este dia.</p>
@@ -290,8 +319,18 @@ const eyebrow = computed(() =>
       so the layers are told apart before the labels are read -- and the cards
       inside keep their category inks, which is a different axis entirely.
     -->
-    <section v-for="band in bands" :key="band.frequency" class="band" :style="band.ink">
-      <div class="band-head">
+    <section
+      v-for="band in bands"
+      :id="`band-${band.frequency}`"
+      :key="band.frequency"
+      class="band"
+      :style="band.ink"
+    >
+      <!-- A gauge holding the page stands the OTHER strata's heads down with their cards. -->
+      <div
+        class="band-head"
+        :class="{ stood: isBandSpotlight(spotlight) && spotlight !== band.frequency }"
+      >
         <h2 class="band-name">{{ band.label }}</h2>
         <span class="band-rule" aria-hidden="true"></span>
         <!-- Which horizon is in trouble, before the cards under it are read. -->
@@ -510,14 +549,47 @@ const eyebrow = computed(() =>
   @apply shrink-0 font-bold tracking-normal;
 }
 
-/* Gauges size themselves and wrap: one horizon or five, the cluster still reads. */
+/*
+ * Gauges size themselves and wrap: one horizon or five, the cluster still reads.
+ * The basis is set so THREE fit a 360px screen: five horizons then take two rows
+ * rather than three, and the lone fifth no longer stretches into a full-width
+ * bar that reads as a different kind of meter from the four above it.
+ */
 .gauges {
-  @apply flex flex-wrap gap-2.5;
+  @apply flex flex-wrap gap-2;
 }
 
 .gauge {
-  @apply flex-1 basis-[150px] px-3 py-2.5 bg-panel border border-line-strong rounded-sm;
+  @apply flex-1 basis-[100px] px-2.5 py-2 text-left bg-panel border border-line-strong rounded-sm
+         cursor-pointer transition-[box-shadow,border-color,background-image] duration-200;
   box-shadow: var(--panel-shadow);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.gauge:hover {
+  border-color: var(--band-ink);
+}
+
+.gauge:focus-visible {
+  @apply outline-none;
+  box-shadow: 0 0 0 3px var(--color-accent-dim);
+}
+
+/*
+ * Held down: the ring and wash the rows it lights take, in the same ink, so the
+ * meter and the stratum read as one lit instrument. The meter itself is NOT
+ * inverted -- a fill drawn in the ground colour is a meter nobody can read.
+ */
+.gauge.on {
+  border-color: var(--band-ink);
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--band-ink) 18%, transparent),
+    color-mix(in srgb, var(--band-ink) 6%, transparent)
+  );
+  box-shadow:
+    0 0 0 2px var(--band-ink),
+    0 0 12px color-mix(in srgb, var(--band-ink) 18%, transparent);
 }
 
 .gauge-head {
@@ -525,17 +597,17 @@ const eyebrow = computed(() =>
 }
 
 .gauge-label {
-  @apply font-mono text-[0.625rem] font-medium uppercase tracking-[0.14em] truncate;
+  @apply font-mono text-[0.5625rem] font-medium uppercase tracking-[0.12em] truncate;
   color: var(--band-ink);
 }
 
 .gauge-pct {
-  @apply shrink-0 text-[0.6875rem] text-fg-faint;
+  @apply shrink-0 text-[0.625rem] text-fg-faint;
 }
 
 .gauge-figure {
-  @apply mt-1 text-[1.5rem] leading-none font-medium text-fg;
-  text-shadow: 0 0 16px color-mix(in srgb, var(--band-ink) 30%, transparent);
+  @apply block mt-0.5 text-[1.125rem] leading-none font-medium text-fg;
+  text-shadow: 0 0 12px color-mix(in srgb, var(--band-ink) 30%, transparent);
 }
 
 .gauge-slash {
@@ -544,25 +616,31 @@ const eyebrow = computed(() =>
 
 /* Hatched track, so an empty gauge still reads as a scale rather than a void. */
 .gauge-track {
-  @apply relative h-2 w-full mt-2 border border-fg overflow-hidden;
+  @apply relative block h-1.5 w-full mt-1.5 border border-fg overflow-hidden;
   background-image: repeating-linear-gradient(45deg, transparent 0 3px, var(--color-line) 3px 4px);
 }
 
 .gauge-fill {
-  @apply h-full transition-[width] duration-500;
+  @apply block h-full transition-[width] duration-500;
   background: var(--band-ink);
 }
 
 .gauge-foot {
-  @apply mt-1.5 text-[0.625rem] font-medium uppercase tracking-[0.1em] text-fg-faint truncate;
+  @apply block mt-1 text-[0.5625rem] font-medium uppercase tracking-[0.08em] text-fg-faint truncate;
 }
 
 .band {
   @apply mt-6;
+  /* The scroll target clears the sticky masthead (h-14 plus the notch) with a breath to spare. */
+  scroll-margin-top: calc(3.5rem + env(safe-area-inset-top, 0px) + 0.75rem);
 }
 
 .band-head {
-  @apply flex items-center gap-3 mb-3;
+  @apply flex items-center gap-3 mb-3 transition-opacity duration-[260ms];
+}
+
+.band-head.stood {
+  @apply opacity-40;
 }
 
 .band-name {
