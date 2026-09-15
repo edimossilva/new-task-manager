@@ -125,21 +125,36 @@ const bands = computed(() =>
   }).filter((band) => band.tasks.total > 0),
 )
 
+/** Whether the Para agora readout is on the page at all. */
+const nowLit = computed(() => Boolean(runningTurn.value && nowCount.value))
+
 /**
  * Which readout is holding the page. Ephemeral view state, so it lives here in a
  * ref and travels down as a prop rather than into a store.
  *
+ * `undefined` is "nobody has tapped yet", and then the page lights Para agora on
+ * its own: the rows the running turn is asking for are what the page is opened
+ * to see, so they should not need a tap to stand out. Following the readout
+ * rather than a fixed value is what lets the default release when the turn ends
+ * or the last of those tasks is ticked off -- a spotlight with no button to
+ * clear it would leave every row stood down. A tap is an explicit choice and
+ * wins until the day changes, so tapping the lit segment does turn it off.
+ *
  * Cleared when the browsed day changes: the sets are computed against a date,
  * and a spotlight left on from Monday would be lighting a different answer.
  */
-const spotlight = ref<'late' | 'now' | null>(null)
+const spotlightChoice = ref<'late' | 'now' | null | undefined>(undefined)
+
+const spotlight = computed<'late' | 'now' | null>(() =>
+  spotlightChoice.value === undefined ? (nowLit.value ? 'now' : null) : spotlightChoice.value,
+)
 
 function toggleSpotlight(which: 'late' | 'now') {
-  spotlight.value = spotlight.value === which ? null : which
+  spotlightChoice.value = spotlight.value === which ? null : which
 }
 
 watch(referenceDate, () => {
-  spotlight.value = null
+  spotlightChoice.value = undefined
 })
 
 const firstName = computed(() => authStore.user?.displayName?.split(' ')[0] ?? '')
@@ -353,6 +368,7 @@ const eyebrow = computed(() =>
 .annunciator-text {
   @apply flex items-baseline gap-1.5 flex-1 min-w-0
          font-mono text-[0.6875rem] font-medium uppercase tracking-[0.14em] truncate;
+  color: inherit;
 }
 
 /*
@@ -485,6 +501,9 @@ const eyebrow = computed(() =>
 .turnbar-text {
   @apply flex items-baseline gap-1.5 flex-1 min-w-0
          font-mono text-[0.6875rem] font-medium uppercase tracking-[0.14em] truncate;
+  /* A <p>, so the global paragraph colour would otherwise beat the pressed
+     ground's inverted ink and leave the label dark on dark. */
+  color: inherit;
 }
 
 .turnbar-count {

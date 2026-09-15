@@ -489,6 +489,12 @@ layers.
     - The spotlight is a plain `ref` in `HomeView` handed down as a prop rather than a store: it
       is ephemeral view state. It clears when the browsed day changes, since the sets are
       computed against a date and one left on from Monday would light a different answer.
+    - **Para agora is lit on open.** Until a segment is tapped, the ref holds `undefined` and
+      the spotlight FOLLOWS the readout: `now` while that segment is on the page, nothing
+      otherwise. Following rather than fixing the value is what releases it when the turn ends
+      or the last of those tasks is ticked -- a spotlight with no button left to clear it would
+      stand every row down. A tap is an explicit choice (including `null`, so tapping the lit
+      segment turns it off) and holds until the day changes.
     - Making them buttons gave up the `role="status"` announcement, which is the right trade
       once they are interactive: each carries an `aria-label` naming the action and
       `aria-pressed` for the state.
