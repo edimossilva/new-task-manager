@@ -83,13 +83,21 @@ app.use(router)
 app.mount('#app')
 
 /*
- * `?click=<selector>` presses something once the page has settled. Headless
- * screenshots cannot click, and the states worth looking at most -- a pressed
- * readout, a spotlight -- only exist after one.
+ * `?route=/tasks/new` opens one of the app's routes. Only `/preview-harness/`
+ * serves this page -- a direct load of `/tasks/new` gets the REAL app's
+ * index.html from Vite's fallback -- so a headless screenshot has to enter here
+ * and be sent on.
+ *
+ * `?click=<selector>` then presses something once the page has settled.
+ * Headless screenshots cannot click, and the states worth looking at most -- a
+ * pressed readout, a spotlight, a form reached from a row -- only exist after one.
  */
+const route = params.get('route')
+const settled = router.isReady().then(() => (route ? router.push(route) : undefined))
+
 const click = params.get('click')
 if (click) {
-  router.isReady().then(() => {
+  settled.then(() => {
     setTimeout(() => {
       document.querySelector<HTMLElement>(click)?.click()
     }, 400)

@@ -244,7 +244,9 @@ layers.
     where `Atrasada` would sit and stops the dial turning (`TaskStamp` takes `disabled`); the
     registry gives it a column, a tab and a power key that lights in the accent to say it can be
     switched back on. `TaskDetailView` says it with a word, `Ativar` / `Desativar`, because a page
-    has room for one.
+    has room for one. The form carries an `Ativa` checkbox, last among its fields, so a task
+    can be created out of the routine or switched while being edited; `CreateTaskInput.active`
+    defaults to `true`, so every other caller of `createTask` is unchanged.
   - A card's head ratio counts ACTIVE tasks only -- it is a reading of the work, and a task nobody
     intends to do is not a debt. (It counts their CHECK-OFFS, via the shared `checkTally`.) A card
     holding nothing but inactive tasks has no ratio to give and falls back to a plain count of the

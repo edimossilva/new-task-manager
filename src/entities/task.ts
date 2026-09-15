@@ -126,6 +126,8 @@ export interface CreateTaskInput {
   weekday?: Weekday
   timesPerPeriod?: number
   turns?: Turn[]
+  /** Defaults to true: a task is in the routine unless the form says otherwise. */
+  active?: boolean
 }
 
 export function createTask(input: CreateTaskInput): Task {
@@ -142,7 +144,7 @@ export function createTask(input: CreateTaskInput): Task {
     weekday: input.weekday,
     timesPerPeriod,
     turns: normalizeTurns(input.turns, timesPerPeriod),
-    active: true,
+    active: input.active ?? true,
     completions: [],
     createdAt: now,
     updatedAt: now,

@@ -18,10 +18,11 @@ tasks and waiting for the clock.
 | --------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `theme`   | `?theme=terminal` | One of the five themes. Defaults to `alloy`.                                                                                                                                                                            |
 | `accent`  | `?accent=cherry`  | Any of the twenty inks. **Sweep this** -- the accent is user-chosen, so a state that reads well on the default can collapse on someone else's, and `cherry` is the case where the accent collides with `--color-alarm`. |
-| `click`   | `?click=.turnbar` | Presses one selector after the page settles, for states that only exist after an interaction.                                                                                                                           |
+| `route`   | `?route=/tasks`   | Opens one of the app's routes. Only `/preview-harness/` serves the harness; a direct load of `/tasks` gets the real app's `index.html`, so a screenshot has to enter here and be sent on.                               |
+| `click`   | `?click=.turnbar` | Presses one selector after the page settles (and after `route`), for states that only exist after an interaction -- including a form reached from a row: `?route=/tasks&click=a[aria-label="Editar Corrida"]`.          |
 
-Routes are the app's own (`/`, `/resumo`, `/tasks`, `/tasks/:id`, `/categories/:id`),
-minus the auth guard.
+Routes are the app's own (`/`, `/resumo`, `/tasks`, `/tasks/new`, `/tasks/:id`,
+`/tasks/:id/edit`, `/categories`, `/categories/:id`), minus the auth guard.
 
 ## Headless screenshots
 

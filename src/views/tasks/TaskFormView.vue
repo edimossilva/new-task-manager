@@ -56,6 +56,9 @@ const categoryId = ref<string>('')
 // A number input hands back '' when cleared, which the use case rejects rather
 // than quietly reading as 1.
 const timesPerPeriod = ref<number | ''>(1)
+// In the routine unless said otherwise. Seeded from the task when editing, so
+// saving without touching the box changes nothing.
+const active = ref(true)
 
 /*
  * How many check-offs each turn claims. ONE source of truth for both input
@@ -93,6 +96,7 @@ watch(existing, (task) => {
   weekday.value = task.weekday ?? ''
   categoryId.value = task.categoryId ?? ''
   timesPerPeriod.value = task.timesPerPeriod
+  active.value = task.active
 })
 
 // Preview of the strip the task will carry, so the number is a shape before it
@@ -124,6 +128,7 @@ function handleSubmit() {
     turns: frequency.value === 'daily' ? chosenTurns.value : [],
     categoryId: categoryId.value || undefined,
     timesPerPeriod: timesPerPeriod.value === '' ? NaN : timesPerPeriod.value,
+    active: active.value,
   }
 
   const saved = existing.value ? store.update({ ...existing.value, ...input }) : store.create(input)
@@ -285,6 +290,22 @@ function handleSubmit() {
       </div>
     </Transition>
 
+    <!--
+      A checkbox, not the registry's power glyph: in a form the field is read
+      before it is tapped. Last, because it is a state of the template rather
+      than part of its cadence.
+    -->
+    <div class="form-group">
+      <label class="check-row">
+        <input v-model="active" type="checkbox" />
+        <span>Ativa</span>
+      </label>
+      <p class="hint">
+        Fora da rotina, a tarefa nao aparece em Hoje, mas mantem seu historico e continua na lista
+        de tarefas.
+      </p>
+    </div>
+
     <div class="flex flex-col-reverse sm:flex-row gap-2 pt-1">
       <RouterLink to="/tasks" class="btn btn-secondary">Cancelar</RouterLink>
       <button type="submit" class="btn">Salvar</button>
@@ -324,6 +345,11 @@ function handleSubmit() {
 
 .turn-rest {
   @apply text-[0.75rem] text-fg-soft mt-1.5;
+}
+
+/* The global label rule is block + margin; a checkbox sits beside its name. */
+.check-row {
+  @apply flex items-center gap-2.5 cursor-pointer mb-0;
 }
 
 .turn-rest.over {
