@@ -317,6 +317,27 @@ export class TaskUseCases {
   }
 
   /**
+   * When the period containing `referenceDate` was last checked off: the latest
+   * recorded moment among that period's own entries, never the task's overall
+   * last check-off -- browsing back to Tuesday should name Tuesday's last
+   * check-off, not Friday's.
+   *
+   * `withCount` keeps kept entries' original moments and appends the surplus,
+   * so on a finished period this is the check-off that reached the target.
+   * Undefined when nothing in the period carries a moment, which is what every
+   * check-off written before `at` was recorded looks like.
+   */
+  lastCompletionAt(task: Task, referenceDate: Date = new Date()): Date | undefined {
+    const key = periodKey(task.frequency, referenceDate)
+    let last: Date | undefined
+    for (const completion of task.completions) {
+      if (completion.key !== key || !completion.at) continue
+      if (!last || completion.at > last) last = completion.at
+    }
+    return last
+  }
+
+  /**
    * Whether the period containing `referenceDate` is fully checked off.
    *
    * `>=`, not `===`: lowering `timesPerPeriod` on a task with more check-offs

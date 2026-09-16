@@ -447,7 +447,12 @@ export function formatDate(date: Date): string {
   return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()}`
 }
 
+/** HH:MM alone, for a moment whose day is already on the page. */
+export function formatTime(date: Date): string {
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
 /** dd/mm/yyyy HH:MM, for a check-off's own moment. Local, like every other reading. */
 export function formatDateTime(date: Date): string {
-  return `${formatDate(date)} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+  return `${formatDate(date)} ${formatTime(date)}`
 }

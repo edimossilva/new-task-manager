@@ -457,6 +457,14 @@ layers.
     to the registry. No description and no frequency badge (the band above already names it). It
     had a second, denser mode while the tasks page shared it; the table took that job, and a
     component with one caller has no reason to keep the branch.
+  - **A row with a check-off says WHEN the latest one was**, on its own line under the title,
+    from the first check-off on rather than only once the period is finished -- a task at one of
+    two has still been worked on. It is the latest recorded moment among the browsed PERIOD's own
+    check-offs (`lastCompletionAt`), never the task's overall last one, so browsing back to
+    Tuesday names Tuesday's. A daily's period is the browsed day, already named at the top of the
+    page, so it reads the hour alone (`14:30`); every other cadence spans days and reads
+    `dd/mm/yyyy HH:MM`. Check-offs written before `at` was recorded have nothing to say and the
+    line is dropped rather than filled with a placeholder.
   - The chip row is dropped entirely when a task has nothing to say there, rather than spending
     its top margin on an empty line, and the info link is pulled up out of the row's padding so a
     44px target cannot make a row taller than its 30px stamp.

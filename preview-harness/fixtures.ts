@@ -12,6 +12,8 @@ import { createTask, periodKey } from '@/entities'
 
 const CREATED = new Date(Date.now() - 90 * 864e5)
 const TODAY = periodKey('daily', new Date())
+/** Three days back at 09:15, inside the current month on all but the first days of one. */
+const EARLIER = new Date(new Date().setHours(9, 15, 0, 0) - 3 * 864e5)
 
 /** N check-offs in the current day, which is all the rack reads. */
 function checks(count: number) {
@@ -66,6 +68,15 @@ export const tasks: Task[] = [
     timesPerPeriod: 1,
   }),
   task({ title: 'Ensaio mensal', categoryId: 'c3', frequency: 'monthly', timesPerPeriod: 1 }),
+  // Finished on an EARLIER day of the period, so the conclusion reads with its
+  // date -- the daily rows above say the hour alone.
+  task({
+    title: 'Pagar contas',
+    categoryId: 'c3',
+    frequency: 'monthly',
+    timesPerPeriod: 1,
+    completions: [{ key: periodKey('monthly', new Date()), at: EARLIER }],
+  }),
   task({ title: 'Renovar certificado', categoryId: 'c3', frequency: 'yearly', timesPerPeriod: 1 }),
   task({ title: 'Escolher um curso', categoryId: 'c3', frequency: 'once', timesPerPeriod: 1 }),
 

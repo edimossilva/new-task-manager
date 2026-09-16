@@ -37,6 +37,10 @@ export const useTaskStore = defineStore('task', () => {
     return createUseCases().completionCountFor(task, referenceDate)
   }
 
+  function lastCompletionAt(task: Task, referenceDate: Date): Date | undefined {
+    return createUseCases().lastCompletionAt(task, referenceDate)
+  }
+
   function checkTally(tasks: Task[], referenceDate: Date): CheckTally {
     return createUseCases().checkTally(tasks, referenceDate)
   }
@@ -156,6 +160,7 @@ export const useTaskStore = defineStore('task', () => {
     getById,
     isCompletedFor,
     completionCountFor,
+    lastCompletionAt,
     checkTally,
     weekSummary,
     weekTrend,

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Category, Task } from '@/entities'
-import { INKS, formatDate, turnPlan, turnSlots } from '@/entities'
+import { INKS, formatDate, formatDateTime, formatTime, turnPlan, turnSlots } from '@/entities'
 import { useTaskStore } from '@/stores/task-store'
 import { usePeriodSelection } from '@/composables/use-period-selection'
 import WeekdayBadge from '@/components/WeekdayBadge.vue'
@@ -73,11 +73,25 @@ const rows = computed(() =>
     const live = task.active
     const isLate = live && store.isLateOn(task, referenceDate.value, today.value)
     const isNow = live && current.size > 0
+    const completed = count >= task.timesPerPeriod
+
+    // The latest check-off in the period, for any row that has one -- a task at
+    // one of two has still been worked on, and when is worth saying. A daily's
+    // period IS the browsed day, already named at the top of the page, so it
+    // says the hour alone; every other cadence spans days and has to say which
+    // one. Check-offs written before the moment was recorded have nothing to
+    // say here and the line is dropped rather than filled with a placeholder.
+    const doneAt = count > 0 ? store.lastCompletionAt(task, referenceDate.value) : undefined
 
     return {
       task,
       count,
-      completed: count >= task.timesPerPeriod,
+      completed,
+      doneAt: doneAt
+        ? task.frequency === 'daily'
+          ? formatTime(doneAt)
+          : formatDateTime(doneAt)
+        : undefined,
       due: store.dueByNow(task, referenceDate.value, today.value),
       isLate,
       isNow,
@@ -216,6 +230,13 @@ const progress = computed(() =>
 
         <div class="task-body">
           <p class="task-title" :class="{ struck: row.completed }">{{ row.task.title }}</p>
+
+          <!-- The moment of the latest check-off, led in by a rule in the done
+               ink, the same green the strike above it takes once the period
+               is finished. -->
+          <p v-if="row.doneAt" class="task-done-at figure">
+            <span class="sr-only">Concluida em</span>{{ row.doneAt }}
+          </p>
 
           <CompletionGauge
             v-if="row.task.timesPerPeriod > 1"
@@ -577,6 +598,20 @@ const progress = computed(() =>
 
 .task-tags {
   @apply flex flex-wrap items-center gap-1.5 mt-1.5;
+}
+
+/*
+ * The latest check-off's own timestamp: small mono, led in by a short rule in
+ * the done ink the way the strike runs through a finished title.
+ */
+.task-done-at {
+  @apply flex items-center gap-1.5 mt-0.5 text-[0.6875rem] leading-none text-fg-faint;
+}
+
+.task-done-at::before {
+  content: '';
+  @apply inline-block w-3 h-[1.5px];
+  background: var(--color-done);
 }
 
 /* Out of the routine: legible, but visibly not part of today's reading. */
