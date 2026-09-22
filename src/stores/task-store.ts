@@ -1,11 +1,12 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
-import type { CreateTaskInput, Task } from '@/entities'
+import type { CreateTaskInput, Task, TaskFrequency } from '@/entities'
 import type {
   CheckTally,
   CompletionPeriod,
   TaskInsight,
   TurnState,
+  WeekdayLoad,
   WeekSummary,
   WeekTrendPoint,
 } from '@/usecases'
@@ -47,6 +48,11 @@ export const useTaskStore = defineStore('task', () => {
 
   function weekSummary(tasks: Task[], referenceDate: Date): WeekSummary {
     return createUseCases().weekSummary(tasks, referenceDate)
+  }
+
+  /** One cadence's week, day by day: what the curves on Hoje draw. */
+  function weekdayLoad(tasks: Task[], referenceDate: Date, frequency: TaskFrequency): WeekdayLoad {
+    return createUseCases().weekdayLoad(tasks, referenceDate, frequency)
   }
 
   function weekTrend(tasks: Task[], referenceDate: Date, weeks?: number): WeekTrendPoint[] {
@@ -163,6 +169,7 @@ export const useTaskStore = defineStore('task', () => {
     lastCompletionAt,
     checkTally,
     weekSummary,
+    weekdayLoad,
     weekTrend,
     completionHistory,
     taskInsight,

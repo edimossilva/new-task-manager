@@ -102,9 +102,20 @@ layers.
   - Its badge has no hue -- `--color-freq-once` is written as `var(--color-fg-soft)`, so every
     theme carries it with nothing to keep in step. The absence of a cadence reads as the absence
     of a colour.
-  - A finished one-off is NOT hidden. It stays in the Unica band, struck through and sorted under
-    the pending ones, until deleted: hiding it would make it unreachable, and this app has no
-    archive to reach it through.
+  - **A finished one-off belongs to the DAY it was finished on**, and Hoje shows it on that day
+    only (`settledElsewhere`, the third gate in `isDueOn`). Every other cadence re-arms, so a
+    done period stays on the page it belongs to and the next one opens by itself; a one-off has
+    a single period that never ends, so without this it sat in the Unica band forever, struck
+    through, on a page whose whole job is what is still open. Browse back to the day and the row
+    is there, struck through, exactly as it was.
+    - It was deliberately NOT hidden before the registry existed, when hiding it would have made
+      it unreachable. `/tasks` now shows every task whether or not it is due, so the row stays
+      editable and deletable and the objection is gone.
+    - The rule reads the check-off's `at`, since that is what answers "which day". A completion
+      written before `at` existed cannot be placed, so those keep showing -- the reading the app
+      has always given them, rather than a task quietly vanishing on deploy. A one-off wanting
+      several check-offs only settles once it is full, which is the same `>=` the rest of the
+      model uses.
 - **Repeat count per period**: a task carries `timesPerPeriod` (1..`MAX_TIMES_PER_PERIOD`, 50).
   The period key is stored **once per check-off**, so `completions` holds duplicates and "how many"
   is a `filter().length` -- a count, never a tally that something would have to reset when the
@@ -279,11 +290,14 @@ layers.
     cannot cover Tuesday. `done` is the honest volume, `credited` the part the ratio uses, and
     `extras` is everything between -- surplus, stale-format keys, inactive tasks, the cadences with
     no weekly demand. The invariant is `routine.done + extras === every check-off the week owns`.
-  - **The day strip carries its own totals.** `dailyDemand(task, day, now)` is what one DAY asks of
-    one task -- dailies and nothing else, because a single day is the only period a daily owns; a
-    weekly, monthly or yearly target belongs to a span of days and cannot be charged to one of
-    them. It is written once and summed two ways, across tasks for `expectedByWeekday` and across
-    days by `weekExpectation`, so the strip and the Diaria band cannot disagree (the invariant:
+  - **The day strip carries its own totals** (`WeekStrip.vue`, this page's alone: home reads the
+    same seven numbers as a CURVE, since the ledger wants each day square and countable where
+    home wants the shape of the run).
+    `dailyDemand(task, day, now)` is what one DAY asks of one task -- dailies and nothing else,
+    because a single day is the only period a daily owns; a weekly, monthly or yearly target
+    belongs to a span of days and cannot be charged to one of them. It is written once and summed
+    two ways, across tasks for `expectedByWeekday` and across days by `weekExpectation`, so the
+    strip and the Diaria band cannot disagree (the invariant:
     `sum(expectedByWeekday) === bands.daily.expected`). The strip therefore does NOT add up to
     `routine.total`, and the block says so (`Metas diarias apenas`) rather than implying it does.
     Elapsed is compared by day KEY, not by timestamp -- the cells are built at noon and the clock
@@ -491,29 +505,32 @@ layers.
     - **Both segments are BUTTONS, and tapping one spotlights what it counts**: its rows take a
       ring and a lit field and strike once, every other row stands down to 30%, and a card
       holding nothing the readout counts dims as a whole so the eye can skip it rather than read
-      every row in it. `--spot-ink` is set by whichever readout is holding the page, so one set
-      of rules serves both and the fault cannot borrow the accent or the reverse. Stood-down
+      every row in it. `--spot-ink` is set on the ROW by the state it is lit for, so one set of
+      rules serves both readouts and the fault cannot borrow the accent or the reverse. Stood-down
       rows stay legible and still tappable -- this is emphasis, not a filter.
+    - **The page OPENS on both**, the `both` state: what was missed and what is running are the
+      two things a day asks of you, and the panel should already be pointing at them. Tapping a
+      readout from there NARROWS the page to that one question (`both` is not `which`, so the
+      existing toggle does it), and tapping it again releases the page. There is no way back to
+      `both` inside a day, which is the trade for a default that needs no second control.
+      Under `both` a unit can hold rows of each kind, which is why the ink moved to the row: a
+      fault outranks a prompt wherever both could apply, so a row that is late and running reads
+      alarm.
+    - A spotlight lighting NOTHING would stand every row on the page down, so `litSpotlight` --
+      what the cards are actually given -- falls back to none when the sets it holds are empty.
+      That is the morning with nothing late and nothing running, and it is also the moment the
+      last counted row is checked off.
     - The spotlight is a plain `ref` in `HomeView` handed down as a prop rather than a store: it
-      is ephemeral view state. It clears when the browsed day changes, since the sets are
-      computed against a date and one left on from Monday would light a different answer.
-    - **The gauges are buttons too**, on the same contract: tapping a band's gauge spotlights
-      every row in that band -- lit in the band's own `--color-freq-*` ink through `.spot-band`,
-      which reads `--band-ink` off the stratum -- and stands the other bands' cards AND heads
-      down. The pressed gauge takes the ring-and-wash the rows take, never an inverted fill: a
-      meter drawn in the ground colour is a meter nobody can read. `Spotlight` and
-      `isBandSpotlight` live in `src/components/spotlight.ts` because the view and the card both
-      need them and a `<script setup>` block cannot export a type.
-      Lighting a band also SCROLLS to it (`#band-<frequency>`, with a `scroll-margin-top` that
-      clears the sticky masthead): the meter is above the fold and its stratum may be two screens
-      down. Releasing scrolls nowhere, and the annunciators never scroll -- their rows are spread
-      across every band, so there is no one place to go.
-    - **Para agora is lit on open.** Until a segment is tapped, the ref holds `undefined` and
-      the spotlight FOLLOWS the readout: `now` while that segment is on the page, nothing
-      otherwise. Following rather than fixing the value is what releases it when the turn ends
-      or the last of those tasks is ticked -- a spotlight with no button left to clear it would
-      stand every row down. A tap is an explicit choice (including `null`, so tapping the lit
-      segment turns it off) and holds until the day changes.
+      is ephemeral view state. It returns to the default when the browsed DAY changes, since the
+      sets are computed against a date and one left on from Monday would light a different
+      answer. The watcher keys on the day KEY, never on `referenceDate` itself: while nothing is
+      pinned that Date is the clock, and a watcher on it fired every sixty seconds -- which
+      silently put the spotlight out a minute after any tap.
+    - `Spotlight` lives in `src/components/spotlight.ts` because the view and the card both need
+      the type and a `<script setup>` block cannot export one. A band's frequency was briefly
+      one of its values -- a gauge tap LIT its stratum rather than narrowing to it, and scrolled
+      the page there -- and that is gone: a gauge now filters, the two controls are alternatives,
+      and one mechanism wearing two hats was what made a lit band under a spotlight unreadable.
     - Making them buttons gave up the `role="status"` announcement, which is the right trade
       once they are interactive: each carries an `aria-label` naming the action and
       `aria-pressed` for the state.
@@ -528,11 +545,126 @@ layers.
   - The overdue set is resolved **once per render** into a `Set` of ids. `isLateOn` walks a
     task's check-offs and the status sort calls its comparator O(n log n) times, so asking the
     question inside the comparator re-walked the same completions on every comparison.
+  - **The curves** (`TrendCurve.vue`) sit at the TOP of the page, above the fault lamps: the
+    rest of Hoje is one day, and a day means little without the week it is part of. TWO of them,
+    side by side once the column is wide enough -- **Diarias** and **Semanais** -- both laid out
+    over the SAME seven days.
+    - Why one axis for two cadences: a daily task and a weekly one are asked for on different
+      horizons, and a single line counting both against one demand is two readings in one
+      stroke. But WHEN the work happened is a question both can answer, and answering it on one
+      axis is what lets the two curves be read against each other -- a week where the dailies
+      held and the weeklies slipped is visible at a glance, which no single mixed line shows.
+    - **Two modes, one component.** `period` gives each column its own figure against its own
+      shelf, which is what a daily task wants: its period IS the day. `cumulative` turns the
+      columns into a RUN -- `done` and `expected` are totals through that day -- which is the
+      only honest way to draw a cadence whose period is the WEEK: a weekly task owes nothing to
+      Tuesday, but the week is half gone by Wednesday night. In that mode the per-column shelves
+      join into one dashed PACE line climbing to the week's demand; the two never appear
+      together, since a cumulative shelf is that line with gaps in it.
+    - **`TaskUseCases.weekdayLoad(tasks, referenceDate, frequency)`** is the whole feed: one
+      cadence's week, day by day. Its per-day demand is built from the SAME figures the
+      week-level one is, so a curve and its own head cannot disagree -- a `daily` task through
+      `dailyDemand`, the only period a daily owns; a `weekly` task pinned to a weekday charged
+      to THAT day, which is exactly what the weekday means and the day `lateByWeekday` already
+      measures it against, in the amount `weekExpectation` says the week asked (so it appears
+      the moment its day comes up and not before); a `weekly` task with no weekday charged to no
+      day at all and reported as `unpinned`, since a seventh of it on each day is a number
+      nobody chose. `unpinned` is DERIVED (`total - sum(expected)`), so it cannot drift from the
+      two figures it sits between, and the block prints it rather than hiding it.
+    - **`pace` is a different claim from `expected`, and the distinction is the whole design.**
+      `expected[i]` is what day `i` OWES -- a deadline, and no unpinned weekly target may ever
+      be charged to one. `pace[i]` is where the week should BE by the end of day `i`: pinned
+      work steps onto its own day, and unpinned work spreads evenly across the seven. Not "this
+      Tuesday owes a seventh", but "a week's work needs a week's rhythm, and by Wednesday a
+      quarter of it untouched is behind". Nothing is ever judged against `pace` except the
+      block's own on-time reading, and `pace[6]` is the week's whole demand -- exposed as
+      `demand`, printed in the head (`2 de 5 na semana`) and named at the plot's ceiling
+      (`meta 5`), so how much the week is asking for never has to be inferred.
+    - **The spread share is MULTIPLIED in, never added a seventh at a time.** A seventh is not
+      representable, and seven of them come to `22.999999999999996` -- which reaches the plot as
+      `meta 22.99999999999999`, a wrong number rather than a formatting slip. `pace[i]` adds
+      `spread * (i + 1) / 7`, whose factor is exactly 1 on the last day, and `demand` is summed
+      from the whole amounts instead of being read off the end of the pace, so both are integers
+      by construction. The per-column figure is a `ceil` of the pace for the same reason a
+      check-off is a counted thing: it says the count that puts you on the line, where rounding
+      would print `0/0` on a day that genuinely wanted something.
+    - `pace` spans the whole week, the days still ahead included, which is why it reads
+      `dayTarget` rather than `dailyDemand` for them: a line that flattened at today would say
+      the week wants nothing more of you, the opposite of what it is drawn to say. Every
+      judgment still measures against `dailyDemand`, so nothing is charged before its day.
+    - **Each block says whether it is on time**, above the plot, measured against the `pace` at
+      the last CLOSED day -- never the one being lived: a day asks for its whole target the
+      moment it starts, so charging today would have the page read `13 em atraso` at breakfast
+      every morning. Work done today still counts, since it is the backlog it pays down, so
+      `done` runs through today and `asked` stops at yesterday. It is a `ceil`, because a pace
+      can be fractional where a check-off cannot and the figure worth printing is how many
+      check-offs would put you back ON the line; it also keeps the words agreeing with the
+      picture, since a curve sitting under the dashed pace is a block that says so. Late is a
+      claim that something is WRONG, so it speaks in `--color-alarm`, the ink the `Atrasada`
+      chip speaks in, and nothing else on the block does.
+    - **The amounts are printed under every column**, `done/expected`, because a curve says
+      "more than Tuesday" and never "five". Four readings, not one: a period still ahead shows a
+      dash rather than a `0` (nothing was asked of it, and a zero is a figure of failure), a
+      period with work but no target shows the count alone, a period with neither shows a quiet
+      `&middot;` -- a weekly curve is mostly days like that, and five copies of a word read as
+      noise where five dots read as quiet -- and only a period with both is a figure over a
+      figure. A met target takes the done ink, the one piece of praise the page hands out.
+    - **The line stops at the last ELAPSED point**, and the leg into the period the clock is
+      still inside is DASHED rather than judged: a day half over is not a day that failed, and a
+      solid line diving to the floor on the last point says exactly that (the reading
+      `TaskRunChart` gives a running period). For the same reason the running period is never
+      washed out as `short`. The ground says it too -- columns still ahead are DOTTED, the
+      softer cousin of the meter hatch, which means a warning or an empty gauge elsewhere and is
+      the wrong claim for a day that has not arrived. The column the clock is in takes a wash of
+      the accent, the same claim on the present the running turn makes downpage.
+    - The plot is a 100x100 box stretched to the card's width (`preserveAspectRatio="none"`) and
+      every stroke carries `vector-effect="non-scaling-stroke"`, so the distortion never reaches
+      the ink: hairlines stay hairlines and round caps stay round at any width. Dots are
+      zero-length round-capped LINES for the same reason -- a `<circle>` in a stretched box is
+      an ellipse -- drawn as a ring plus a core, so a met target is a filled bubble and a short
+      one a hollow bead. Labels, figures and the hit targets are HTML over the SVG, never text
+      inside it, which keeps them at their own size and keeps them real buttons.
+    - The curve is cubic with HORIZONTAL tangents: control points share their end's `y`, so the
+      line can never carry above or below the two figures it runs between and a quiet Tuesday
+      between two busy days cannot bulge into a day that never happened.
+    - Tapping a column browses that day, the same day the selector above picks, reached by
+      pointing instead of by stepping. Columns the period store would refuse are disabled.
+    - The two blocks split on a **container query**, never a viewport one: the shell is
+      `max-w-4xl`, so an `lg:` split fires on a wide window inside a narrow column and squeezes
+      seven figures into 195px. `.curve-frame` exists only to be that container, since an
+      element cannot query itself.
+    - Home holds the week by a `mondayKey` STRING for the reason the summary does: the clock
+      ticks every 60s, and a computed reading `referenceDate` itself would walk every task's
+      check-offs once a minute. The foot's delta is the SAME load one week back, so the figure
+      compared is the figure plotted -- a rise takes the done ink, a fall is stated in the
+      page's own foreground, since doing less than last week is not a fault and
+      `--color-alarm` is for deadlines.
+    - The Semanais block is **dropped entirely when nothing repeats weekly**: an empty curve
+      reads as failure where nothing was ever asked -- the rule that drops an empty band.
   - Above the bands sits a **gauge per band**, not one meter for the day: four dailies left and
     one yearly left are not the same debt, and a single bar averaging them says neither. Each
     gauge is tinted with its band's frequency ink, so a glance maps it to the stratum below
     without reading the label, and the cluster wraps rather than gridding, so one horizon or five
     both read.
+    - **Each gauge is also the way INTO its horizon**: tapping one narrows the page to that
+      cadence, tapping it again gives the page back. The reading and the control are the same
+      object, which is what keeps the page from growing a row of filter chips saying what the
+      gauges already say. The CLUSTER never filters itself -- the others stand down to 45% but
+      stay on screen and stay tappable, the spotlight's own rule one altitude up, because a
+      control that hides itself cannot be switched back.
+    - A held gauge is ringed in its OWN band ink, never the accent: the cluster's whole job is
+      mapping a colour to a stratum, and an Anual card turning amber when picked would break the
+      one mapping it exists for.
+    - It is a plain `ref` in `HomeView` beside the spotlight, cleared when the browsed day
+      changes: a band with work on Monday can be empty today, and a page filtered to nothing
+      explains itself to nobody.
+    - **The horizon and the spotlight are ALTERNATIVES, and taking one hands the page over to
+      it.** Picking a horizon releases the spotlight, because a horizon under one is the worst
+      of both -- you asked to see the dailies and most of them are standing down at 30% for
+      being neither late nor in the running turn. Tapping a readout releases the horizon for the
+      mirror reason: a readout counting rows a filter is hiding is a readout lying about its own
+      figure. Neither is RESTORED on the way back out; by then the choices are the user's, and a
+      default springing back is the page arguing with them.
   - The **home page** stacks its units in one **band per frequency**, `FREQUENCIES` order: Unica
     on top, then Diaria, Semanal, Mensal, Anual. Each band holds its own rack, so a category with a daily
     and a monthly task appears once per band -- the band is the outer axis, the category the
@@ -716,6 +848,12 @@ layers.
   ticked every 60s and on `visibilitychange`) and `selection` — `{ year, month, day } | null`, where
   **null means follow the clock**. `usePeriodSelection()` derives `referenceDate`, `today` and
   `isToday` from it, and `PeriodSelector.vue` renders the Dia/Mes/Ano selects. Details that matter:
+  - **The week strip is folded away on Hoje** (`<PeriodSelector collapsed />`): the curves at the
+    top of that page are already seven tappable days, and two rows of them is one row too many.
+    The head keeps the arrows, the month and `Hoje`, so the day can still be stepped without
+    opening anything, and the month button is ONE disclosure for both halves -- the strip and the
+    Mes/Ano selects are the same question at two resolutions, and a panel with two independent
+    toggles is a panel nobody reads twice. Every other caller gets the strip as it always was.
   - The clock is in the **store, not a composable**, because a composable's `onMounted` gives every
     caller its own interval and its own `now` ref — two refs sampled either side of midnight would
     have the selector and the view disagree about the date.

@@ -1,20 +1,38 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import type { Task } from '@/entities'
-import { FREQUENCIES, FREQUENCY_LABELS, TURN_LABELS, formatDate, turnOf } from '@/entities'
+import { computed, onMounted, ref, watch } from 'vue'
+import type { Task, TaskFrequency, Weekday } from '@/entities'
+import {
+  FREQUENCIES,
+  FREQUENCY_LABELS,
+  TURN_LABELS,
+  WEEKDAY_SHORT,
+  addWeeks,
+  formatDate,
+  formatWeekRange,
+  parseDailyKey,
+  periodKey,
+  turnOf,
+  weekDates,
+  weekStart,
+} from '@/entities'
 import { useAuthStore } from '@/stores/auth-store'
 import { useTaskStore } from '@/stores/task-store'
 import { useCategoryStore } from '@/stores/category-store'
+import { usePeriodStore } from '@/stores/period-store'
 import { usePeriodSelection } from '@/composables/use-period-selection'
 import { buildCategoryRack } from '@/composables/use-category-rack'
+import type { WeekdayLoad } from '@/usecases'
 import { percentOf } from '@/usecases'
 import CategoryTaskCard from '@/components/CategoryTaskCard.vue'
 import PeriodSelector from '@/components/PeriodSelector.vue'
-import { isBandSpotlight, type Spotlight } from '@/components/spotlight'
+import type { Spotlight } from '@/components/spotlight'
+import type { CurvePoint } from '@/components/TrendCurve.vue'
+import TrendCurve from '@/components/TrendCurve.vue'
 
 const authStore = useAuthStore()
 const store = useTaskStore()
 const categoryStore = useCategoryStore()
+const periodStore = usePeriodStore()
 const { referenceDate, today, isToday } = usePeriodSelection()
 
 onMounted(() => {
@@ -130,46 +148,223 @@ const bands = computed(() =>
 const nowLit = computed(() => Boolean(runningTurn.value && nowCount.value))
 
 /**
- * Which readout is holding the page. Ephemeral view state, so it lives here in a
- * ref and travels down as a prop rather than into a store.
+ * The week the browsed day sits in, held as a KEY first.
  *
- * `undefined` is "nobody has tapped yet", and then the page lights Para agora on
- * its own: the rows the running turn is asking for are what the page is opened
- * to see, so they should not need a tap to stand out. Following the readout
- * rather than a fixed value is what lets the default release when the turn ends
- * or the last of those tasks is ticked off -- a spotlight with no button to
- * clear it would leave every row stood down. A tap is an explicit choice and
- * wins until the day changes, so tapping the lit segment does turn it off.
- *
- * Cleared when the browsed day changes: the sets are computed against a date,
- * and a spotlight left on from Monday would be lighting a different answer.
+ * The clock ticks every sixty seconds and `referenceDate` follows it whenever
+ * nothing is pinned, so a computed reading the Date itself would walk every
+ * task's check-offs once a minute. A computed whose value is an unchanged
+ * string does not dirty its dependents, so this re-runs when the DAY turns over
+ * -- and stepping Tuesday to Wednesday inside one week is free, since the
+ * Monday does not move.
  */
-const spotlightChoice = ref<Spotlight | null | undefined>(undefined)
+const dayKey = computed(() => periodKey('daily', referenceDate.value))
+const mondayKey = computed(() => periodKey('daily', weekStart(referenceDate.value)))
+const monday = computed(() => parseDailyKey(mondayKey.value) ?? weekStart(referenceDate.value))
 
-const spotlight = computed<Spotlight | null>(() =>
-  spotlightChoice.value === undefined ? (nowLit.value ? 'now' : null) : spotlightChoice.value,
-)
+/**
+ * One curve per cadence, both of them laid out over the SAME seven days.
+ *
+ * A daily task and a weekly one are asked for on different horizons, and a
+ * single line counting both against one demand is two readings in one stroke --
+ * but WHEN the work happened is a question both can answer, and answering it on
+ * one axis is what lets the two curves be read against each other.
+ */
+const dailyLoad = computed(() => store.weekdayLoad(store.tasks, monday.value, 'daily'))
+const weeklyLoad = computed(() => store.weekdayLoad(store.tasks, monday.value, 'weekly'))
 
-function toggleSpotlight(which: Spotlight) {
-  spotlightChoice.value = spotlight.value === which ? null : which
+/**
+ * The same reading one week back, which is the only comparison a single week
+ * can offer and the one the curve cannot draw. It is the figure the curve
+ * PLOTS, so the chip and the line under it are counting the same thing.
+ */
+const lastMonday = computed(() => addWeeks(monday.value, -1))
+const previousDaily = computed(() => store.weekdayLoad(store.tasks, lastMonday.value, 'daily'))
+const previousWeekly = computed(() => store.weekdayLoad(store.tasks, lastMonday.value, 'weekly'))
 
-  // A gauge tap that LIGHTS a band also takes the page to it: the meter sits
-  // above the fold and the stratum it reads may be two screens down, and a
-  // spotlight the user has to scroll to find is an answer left in the dark.
-  // Releasing it scrolls nowhere, and the annunciators never do -- their rows
-  // are spread across every band, so there is no one place to go.
-  if (isBandSpotlight(which) && spotlight.value === which) {
-    nextTick(() => {
-      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-      document
-        .getElementById(`band-${which}`)
-        ?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' })
-    })
-  }
+const weekRange = computed(() => formatWeekRange(monday.value))
+
+const weeklyTasks = computed(() => store.tasks.filter((task) => task.frequency === 'weekly'))
+
+/**
+ * The seven days of the browsed week, as a curve draws them.
+ *
+ * `cumulative` turns the columns into a RUN: each point carries the totals
+ * through that day rather than the day's own figures, which is the only honest
+ * way to draw a cadence whose period is the WEEK -- a weekly task owes nothing
+ * to Tuesday, but the week is half gone by Wednesday night.
+ */
+function buildPoints(load: WeekdayLoad, cumulative = false): CurvePoint[] {
+  const todayKey = periodKey('daily', today.value)
+  let running = 0
+  return weekDates(monday.value).map((date, index) => {
+    const key = periodKey('daily', date)
+    running += load.done[index] ?? 0
+    return {
+      label: WEEKDAY_SHORT[(index + 1) as Weekday],
+      done: cumulative ? running : (load.done[index] ?? 0),
+      // The pace is fractional wherever a target belongs to no single day, and
+      // a check-off is not: `ceil`, so the column says the count it takes to be
+      // on the line rather than rounding a real shortfall down to `0/0`. The
+      // last day is already whole, so the run still ends exactly on the goal.
+      expected: cumulative ? Math.ceil(load.pace[index] ?? 0) : (load.expected[index] ?? 0),
+      date,
+      isCurrent: key === todayKey,
+      // A day-KEY comparison, not a timestamp one: the dates are built at noon
+      // and the clock is not, so `date > now` would put today in the future
+      // every morning.
+      isFuture: key > todayKey,
+      isSelected: key === dayKey.value,
+      enabled: periodStore.contains(date),
+    }
+  })
 }
 
-watch(referenceDate, () => {
-  spotlightChoice.value = undefined
+const dailyPoints = computed(() => buildPoints(dailyLoad.value))
+const weeklyPoints = computed(() => buildPoints(weeklyLoad.value, true))
+
+/**
+ * On time, or behind by how much.
+ *
+ * Measured against the PACE at the last CLOSED day, never the one being lived:
+ * a day asks for its whole target the moment it starts, so charging today would
+ * have the page read `13 em atraso` at breakfast every morning. Work done today
+ * still counts, since it is the backlog it pays down -- which is why `done`
+ * runs through today and `asked` stops at yesterday.
+ *
+ * `ceil`, because a pace can be fractional where a check-off cannot, and the
+ * figure that means something is how many check-offs would put you back ON the
+ * line: three quarters of one behind is one to do. It also keeps the words and
+ * the picture agreeing -- if the curve sits under the dashed pace at the last
+ * closed day, the block says so.
+ *
+ * `late` is a claim that something is WRONG, so it speaks in the alarm the same
+ * way the `Atrasada` chip does, and nothing else on the block does.
+ */
+function statusOf(load: WeekdayLoad) {
+  // Where the browsed week sits against the clock: how many of its days are
+  // over, 0 for a week still ahead and 7 for one already past.
+  const closed = weekDates(monday.value).filter(
+    (date) => periodKey('daily', date) < periodKey('daily', today.value),
+  ).length
+
+  const done = load.done.slice(0, Math.min(closed + 1, 7)).reduce((sum, n) => sum + n, 0)
+  const asked = closed > 0 ? (load.pace[closed - 1] ?? 0) : 0
+  return { late: Math.max(0, Math.ceil(asked - done)), asked }
+}
+
+const dailyStatus = computed(() => statusOf(dailyLoad.value))
+const weeklyStatus = computed(() => statusOf(weeklyLoad.value))
+
+/** Null when neither week has anything to compare -- a delta of nothing. */
+function deltaOf(current: WeekdayLoad, previous: WeekdayLoad): number | null {
+  if (current.placed === 0 && previous.placed === 0) return null
+  return current.placed - previous.placed
+}
+
+const dailyDelta = computed(() => deltaOf(dailyLoad.value, previousDaily.value))
+const weeklyDelta = computed(() => deltaOf(weeklyLoad.value, previousWeekly.value))
+
+/**
+ * Doing less than last week is not a FAULT -- the app keeps alarm for a
+ * deadline that passed -- so only the rise takes an ink, and the fall is
+ * stated in the page's own quiet foreground.
+ */
+function deltaLabel(delta: number): string {
+  if (delta === 0) return 'igual a semana passada'
+  const glyph = delta > 0 ? '\u25b2' : '\u25bc'
+  return `${glyph} ${Math.abs(delta)} vs semana passada`
+}
+
+/**
+ * Which horizon the page is narrowed to, if any.
+ *
+ * A gauge is already that band's reading; tapping it says "show me only this",
+ * and tapping it again gives the page back. Ephemeral view state, so it lives
+ * here in a ref -- the spotlight's own arrangement -- and it clears when the
+ * browsed day changes, since a band that had work on Monday can be empty today
+ * and a page filtered to nothing explains itself to nobody.
+ *
+ * The GAUGES always render in full, whatever is picked: they are the control,
+ * and a control that hides itself cannot be switched back.
+ */
+const horizon = ref<TaskFrequency | null>(null)
+
+function toggleHorizon(frequency: TaskFrequency) {
+  horizon.value = horizon.value === frequency ? null : frequency
+  // The two controls are ALTERNATIVES, and taking one hands the page over to
+  // it. A horizon under a spotlight is the worst of both: you asked to see the
+  // dailies and most of them are standing down at 30% because they are neither
+  // late nor in the running turn. Released rather than restored on the way back
+  // out -- by then the choices are the user's, and a default springing back is
+  // the page arguing with them.
+  spotlight.value = null
+}
+
+/** The bands the racks actually draw. */
+const shownBands = computed(() =>
+  horizon.value ? bands.value.filter((band) => band.frequency === horizon.value) : bands.value,
+)
+
+/**
+ * Which readout is holding the page.
+ *
+ * `both` is the state the page OPENS in: what was missed and what is running
+ * are the two things a day asks of you, and the panel should be pointing at
+ * them before anything is tapped. Tapping a readout then narrows the page to
+ * that one question, and tapping it again releases the page entirely.
+ *
+ * Ephemeral view state, so it lives here in a ref and travels down as a prop
+ * rather than into a store; the TYPE lives in its own module, since the card
+ * needs it too.
+ */
+const DEFAULT_SPOTLIGHT: Spotlight = 'both'
+
+const spotlight = ref<Spotlight | null>(DEFAULT_SPOTLIGHT)
+
+/**
+ * What the cards are actually given.
+ *
+ * A spotlight lighting NOTHING would stand every row on the page down -- which
+ * is what the default would do on a morning with nothing late and nothing
+ * running, and what any of them does the moment the last counted row is checked
+ * off. The readout that is holding the page must have something to hold.
+ */
+const litSpotlight = computed<Spotlight | null>(() => {
+  const held = spotlight.value
+  if (!held) return null
+  const late = held !== 'now' && lateCount.value > 0
+  // `nowLit` is the readout's own condition, so the guard and the segment on
+  // the page cannot disagree about whether there is anything to hold.
+  const now = held !== 'late' && nowLit.value
+  return late || now ? held : null
+})
+
+function toggleSpotlight(which: Spotlight) {
+  // From `both`, a tap narrows rather than releases: the readout was lit as one
+  // of two, and tapping it is a request to be shown only its own answer.
+  spotlight.value = spotlight.value === which ? null : which
+  // The same rule the other way: a readout counting rows a horizon filter is
+  // hiding is a readout lying about its own figure.
+  horizon.value = null
+}
+
+/** Lit as itself, or as half of the pair the page opened on. */
+function isLit(which: Spotlight): boolean {
+  return litSpotlight.value === which || litSpotlight.value === 'both'
+}
+
+/**
+ * The sets are computed against a date, so a spotlight left on from Monday
+ * would be lighting a different answer. Back to the default rather than off:
+ * the browsed day gets the same opening reading today did.
+ *
+ * Keyed on the DAY, never on `referenceDate` itself: while nothing is pinned
+ * that Date is the clock, and a watcher on it fired every sixty seconds --
+ * which silently put the page's spotlight out a minute after any tap.
+ */
+watch(dayKey, () => {
+  spotlight.value = DEFAULT_SPOTLIGHT
+  horizon.value = null
 })
 
 const firstName = computed(() => authStore.user?.displayName?.split(' ')[0] ?? '')
@@ -196,7 +391,125 @@ const eyebrow = computed(() =>
   </header>
 
   <template v-if="store.tasks.length">
-    <PeriodSelector />
+    <!-- The week strip is folded away here: the curves below are already seven
+         tappable days, and two rows of them is one row too many. -->
+    <PeriodSelector collapsed />
+
+    <!--
+      The week the browsed day sits in, above everything else on the page: the
+      rest of Hoje is one day, and a day means little without the seven it is
+      part of. Two curves side by side where there is room, because a day and a
+      week are two different horizons and neither can be charged to the other --
+      the days carry the dailies, the weeks carry what repeats weekly.
+    -->
+    <div class="curve-frame">
+      <section class="curves">
+        <!--
+          Two curves over the SAME seven days, one per cadence. A day and a week
+          are different horizons and neither can be charged to the other -- a
+          weekly target belongs to a week, so it is absent from the daily curve
+          by construction -- but WHEN the work happened is a question both can
+          answer, and answering it on one axis is what lets them be read against
+          each other.
+        -->
+        <article class="curve-block sheet" aria-label="Tarefas diarias na semana">
+          <div class="block-head">
+            <div class="block-id">
+              <RouterLink to="/resumo" class="block-label" title="Ver o resumo da semana"
+                >Diarias</RouterLink
+              >
+              <span class="block-note figure">{{ weekRange }}</span>
+            </div>
+            <div class="block-read">
+              <p class="block-total">
+                <span class="total-done">{{ dailyLoad.placed }}</span>
+                <span class="total-of">de {{ dailyLoad.demand }}</span>
+              </p>
+              <!--
+                On time, or behind by how much: the block's own verdict, before
+                any column is read. Late is a claim that something is WRONG, so
+                it speaks in the alarm the `Atrasada` chip speaks in.
+              -->
+              <p
+                class="block-state"
+                :class="{ late: dailyStatus.late > 0, idle: !dailyStatus.asked }"
+              >
+                <span class="state-lamp" aria-hidden="true"></span>
+                <template v-if="dailyStatus.late">{{ dailyStatus.late }} em atraso</template>
+                <template v-else-if="dailyStatus.asked">Em dia</template>
+                <template v-else>Nada cobrado ainda</template>
+              </p>
+            </div>
+          </div>
+          <TrendCurve :points="dailyPoints" @select="periodStore.setDate($event)" />
+          <p class="block-foot figure">
+            <span v-if="dailyDelta !== null" class="foot-delta" :class="{ up: dailyDelta > 0 }">
+              {{ deltaLabel(dailyDelta) }}
+            </span>
+            <template v-if="dailyLoad.undated"> &middot; {{ dailyLoad.undated }} sem dia </template>
+          </p>
+        </article>
+
+        <!-- The weekly routine over the same seven days: a weekly task pinned to
+             a weekday is charged to THAT day, which is what the weekday means.
+             Dropped when nothing repeats weekly -- an empty curve reads as
+             failure where nothing was ever asked. -->
+        <article
+          v-if="weeklyTasks.length"
+          class="curve-block sheet"
+          aria-label="Tarefas semanais na semana"
+        >
+          <div class="block-head">
+            <div class="block-id">
+              <RouterLink to="/resumo" class="block-label" title="Ver o resumo da semana"
+                >Semanais</RouterLink
+              >
+              <span class="block-note figure">
+                {{ weeklyTasks.length }}
+                {{ weeklyTasks.length === 1 ? 'tarefa' : 'tarefas' }}
+              </span>
+            </div>
+            <div class="block-read">
+              <p class="block-total">
+                <span class="total-done">{{ weeklyLoad.placed }}</span>
+                <span class="total-of">de {{ weeklyLoad.demand }} na semana</span>
+              </p>
+              <p
+                class="block-state"
+                :class="{ late: weeklyStatus.late > 0, idle: !weeklyStatus.asked }"
+              >
+                <span class="state-lamp" aria-hidden="true"></span>
+                <template v-if="weeklyStatus.late">{{ weeklyStatus.late }} em atraso</template>
+                <template v-else-if="weeklyStatus.asked">Em dia</template>
+                <template v-else>Nada cobrado ainda</template>
+              </p>
+            </div>
+          </div>
+          <TrendCurve
+            :points="weeklyPoints"
+            mode="cumulative"
+            :goal-label="`meta ${weeklyLoad.demand}`"
+            @select="periodStore.setDate($event)"
+          />
+          <!-- A weekly task with no weekday is due any day of the week, so it is
+               charged to none of them. The block says so rather than spreading a
+               seventh of it across days nobody picked. -->
+          <p class="block-foot figure">
+            <span v-if="weeklyDelta !== null" class="foot-delta" :class="{ up: weeklyDelta > 0 }">
+              {{ deltaLabel(weeklyDelta) }}
+            </span>
+            <span class="foot-pace" aria-hidden="true"></span>
+            <span>ritmo esperado</span>
+            <template v-if="weeklyLoad.unpinned">
+              &middot; {{ weeklyLoad.unpinned }} sem dia fixo
+            </template>
+            <template v-if="weeklyLoad.undated">
+              &middot; {{ weeklyLoad.undated }} sem dia
+            </template>
+          </p>
+        </article>
+      </section>
+    </div>
 
     <!--
       The master annunciator. A panel reports a fault twice -- once at the top,
@@ -216,8 +529,8 @@ const eyebrow = computed(() =>
           v-if="lateCount"
           type="button"
           class="annunciator"
-          :class="{ on: spotlight === 'late' }"
-          :aria-pressed="spotlight === 'late'"
+          :class="{ on: isLit('late') }"
+          :aria-pressed="isLit('late')"
           :aria-label="`Destacar ${lateCount} ${lateCount === 1 ? 'tarefa atrasada' : 'tarefas atrasadas'}`"
           @click="toggleSpotlight('late')"
         >
@@ -243,8 +556,8 @@ const eyebrow = computed(() =>
           v-if="runningTurn && nowCount"
           type="button"
           class="turnbar"
-          :class="{ on: spotlight === 'now' }"
-          :aria-pressed="spotlight === 'now'"
+          :class="{ on: isLit('now') }"
+          :aria-pressed="isLit('now')"
           :aria-label="`Destacar ${nowCount} ${nowCount === 1 ? 'tarefa' : 'tarefas'} para agora`"
           @click="toggleSpotlight('now')"
         >
@@ -273,17 +586,22 @@ const eyebrow = computed(() =>
       tapping one spotlights every row in the band it measures and stands the
       other strata down. The meter and the stratum are one instrument.
     -->
+    <!--
+      Each gauge is also the way INTO its own horizon: tapping one narrows the
+      page to that cadence, tapping it again gives the page back. The cluster
+      never filters itself, so the way out is always on screen.
+    -->
     <section v-if="bands.length" class="gauges" aria-label="Progresso">
       <button
         v-for="band in bands"
         :key="band.frequency"
         type="button"
         class="gauge"
-        :class="{ on: spotlight === band.frequency }"
+        :class="{ on: horizon === band.frequency, stood: horizon && horizon !== band.frequency }"
         :style="band.ink"
-        :aria-pressed="spotlight === band.frequency"
-        :aria-label="`Destacar tarefas: ${band.label}`"
-        @click="toggleSpotlight(band.frequency)"
+        :aria-pressed="horizon === band.frequency"
+        :aria-label="`Mostrar apenas as tarefas ${band.label.toLowerCase()}`"
+        @click="toggleHorizon(band.frequency)"
       >
         <span class="gauge-head">
           <span class="gauge-label">{{ band.label }}</span>
@@ -319,18 +637,8 @@ const eyebrow = computed(() =>
       so the layers are told apart before the labels are read -- and the cards
       inside keep their category inks, which is a different axis entirely.
     -->
-    <section
-      v-for="band in bands"
-      :id="`band-${band.frequency}`"
-      :key="band.frequency"
-      class="band"
-      :style="band.ink"
-    >
-      <!-- A gauge holding the page stands the OTHER strata's heads down with their cards. -->
-      <div
-        class="band-head"
-        :class="{ stood: isBandSpotlight(spotlight) && spotlight !== band.frequency }"
-      >
+    <section v-for="band in shownBands" :key="band.frequency" class="band" :style="band.ink">
+      <div class="band-head">
         <h2 class="band-name">{{ band.label }}</h2>
         <span class="band-rule" aria-hidden="true"></span>
         <!-- Which horizon is in trouble, before the cards under it are read. -->
@@ -350,7 +658,7 @@ const eyebrow = computed(() =>
           :category="unit.category"
           :tasks="unit.tasks"
           :index="index"
-          :spotlight="spotlight"
+          :spotlight="litSpotlight"
         />
       </div>
     </section>
@@ -367,6 +675,120 @@ const eyebrow = computed(() =>
 
 .eyebrow {
   @apply font-mono text-[0.625rem] font-medium uppercase tracking-[0.16em] text-accent-text mb-1;
+}
+
+/*
+ * The curve blocks. The widest reading on a page whose every other figure is
+ * one day, and they sit above the fault lamps deliberately: the frame the day
+ * is read inside rather than another thing wrong with it.
+ *
+ * Side by side once there is ROOM for it, measured as a container query rather
+ * than a viewport one: the shell is `max-w-4xl`, so a `lg:` split would fire on
+ * a wide window inside a narrow column and squeeze seven figures into 195px.
+ * The frame exists only to be the container -- an element cannot query itself.
+ */
+.curve-frame {
+  container-type: inline-size;
+}
+
+.curves {
+  @apply grid gap-3 mt-3;
+}
+
+@container (min-width: 640px) {
+  .curves {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.curve-block {
+  @apply px-3.5 pt-3 pb-3 overflow-hidden;
+}
+
+.block-head {
+  @apply flex items-end justify-between gap-3 mb-3;
+}
+
+.block-id {
+  @apply min-w-0 flex flex-col gap-0.5;
+}
+
+/* The way into the week's own page, which is where these figures are spelled
+   out task by task. */
+.block-label {
+  @apply font-display text-[1rem] leading-none font-semibold text-fg no-underline w-fit
+         transition-colors duration-200;
+}
+
+.block-label:hover {
+  @apply text-accent-text;
+}
+
+.block-note {
+  @apply text-[0.6875rem] text-fg-faint truncate;
+}
+
+.block-read {
+  @apply shrink-0 flex flex-col items-end gap-1;
+}
+
+/*
+ * The amounts, said plainly: what was done OF what was asked. A ratio in words
+ * rather than a percentage, since this block is read at a glance and `37%` of a
+ * figure nobody has seen answers nothing.
+ */
+.block-total {
+  @apply flex items-baseline gap-1.5;
+}
+
+.total-done {
+  @apply font-display text-[1.5rem] leading-none font-semibold text-fg;
+}
+
+.total-of {
+  @apply font-mono text-[0.6875rem] text-fg-soft;
+}
+
+/*
+ * The block's verdict, read before any column is: on time in the done ink,
+ * behind in the alarm -- the one colour the app reserves for "this is wrong",
+ * the same one the `Atrasada` chip speaks in -- and nothing asked yet in the
+ * page's own faint foreground. Sentence case, no tracking: the block's voice is
+ * plainer than the panel type around it, which is what keeps a page of readouts
+ * from sounding like an alarm system.
+ */
+.block-state {
+  @apply flex items-center gap-1.5 text-[0.6875rem] font-medium;
+  color: var(--color-done);
+}
+
+.state-lamp {
+  @apply w-1.5 h-1.5 shrink-0 rounded-full;
+  background: currentColor;
+}
+
+.block-state.late {
+  color: var(--color-alarm);
+}
+
+.block-state.idle {
+  @apply text-fg-faint font-normal;
+}
+
+.block-foot {
+  @apply mt-2 flex flex-wrap items-center gap-x-1 text-[0.6875rem] text-fg-faint;
+}
+
+/* The dashed swatch that names the pace line, so a second line on the plot does
+   not have to be guessed at. */
+.foot-pace {
+  @apply inline-block w-4 h-0 border-t-2 border-dashed border-fg-faint align-middle;
+}
+
+/* A rise takes the done ink; a fall is stated, never alarmed -- doing less than
+   last week is not a fault. */
+.foot-delta.up {
+  color: var(--color-done);
 }
 
 /*
@@ -559,15 +981,32 @@ const eyebrow = computed(() =>
   @apply flex flex-wrap gap-2;
 }
 
+/*
+ * A gauge is a button now: the reading and the way into the horizon it reads
+ * are the same object, which is what keeps the page from growing a row of
+ * filter chips saying what the gauges already say.
+ */
 .gauge {
   @apply flex-1 basis-[100px] px-2.5 py-2 text-left bg-panel border border-line-strong rounded-sm
-         cursor-pointer transition-[box-shadow,border-color,background-image] duration-200;
+         cursor-pointer transition-[opacity,box-shadow,border-color,background-image] duration-200;
   box-shadow: var(--panel-shadow);
   -webkit-tap-highlight-color: transparent;
 }
 
-.gauge:hover {
-  border-color: var(--band-ink);
+/* Stood down, not hidden: the way out of a filter must stay on screen and
+   legible, which is the spotlight's own rule one altitude up. */
+.gauge.stood {
+  @apply opacity-45;
+}
+
+@media (hover: hover) {
+  .gauge:hover {
+    border-color: var(--band-ink);
+  }
+
+  .gauge.stood:hover {
+    @apply opacity-80;
+  }
 }
 
 .gauge:focus-visible {
@@ -576,9 +1015,11 @@ const eyebrow = computed(() =>
 }
 
 /*
- * Held down: the ring and wash the rows it lights take, in the same ink, so the
- * meter and the stratum read as one lit instrument. The meter itself is NOT
- * inverted -- a fill drawn in the ground colour is a meter nobody can read.
+ * Held down: the ring and wash in the BAND's own ink, never the accent -- the
+ * cluster's whole job is mapping a colour to a stratum, and an Anual card
+ * turning amber when picked would break the one mapping it exists for. The
+ * meter itself is NOT inverted: a fill drawn in the ground colour is a meter
+ * nobody can read.
  */
 .gauge.on {
   border-color: var(--band-ink);
@@ -631,16 +1072,10 @@ const eyebrow = computed(() =>
 
 .band {
   @apply mt-6;
-  /* The scroll target clears the sticky masthead (h-14 plus the notch) with a breath to spare. */
-  scroll-margin-top: calc(3.5rem + env(safe-area-inset-top, 0px) + 0.75rem);
 }
 
 .band-head {
-  @apply flex items-center gap-3 mb-3 transition-opacity duration-[260ms];
-}
-
-.band-head.stood {
-  @apply opacity-40;
+  @apply flex items-center gap-3 mb-3;
 }
 
 .band-name {

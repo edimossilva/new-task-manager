@@ -102,6 +102,42 @@ export interface WeekSummary {
   rows: WeekTaskRow[]
 }
 
+/**
+ * One CADENCE's week, laid out day by day: what its tasks carried on each, and
+ * what each day asked of them.
+ *
+ * Separate from `WeekSummary`, which mixes every cadence into one set of seven
+ * figures. Home draws a curve per cadence, and a curve whose fill counts weekly
+ * check-offs against a daily demand is two readings in one line.
+ */
+export interface WeekdayLoad {
+  /** Check-offs placed on each day, Monday first. Always length 7. */
+  done: number[]
+  /** What each day asked of this cadence, Monday first. Always length 7. */
+  expected: number[]
+  /**
+   * The expected progress through the week, CUMULATIVE, Monday first. `pace[i]`
+   * is everything the week wants done by the end of day `i`, so `pace[6]` is the
+   * whole week's demand and the line it draws ends on it.
+   */
+  pace: number[]
+  /**
+   * What the week asks in total, elapsed or not -- where `pace` ends. Summed
+   * from whole amounts rather than read off the pace, so it is always an
+   * integer: check-offs are counted things, and a goal of 2.9999999999996 is
+   * not a goal anyone set.
+   */
+  demand: number
+  /** Every check-off the week owns for this cadence, dated or not. */
+  placed: number
+  /** Everything the week has asked for SO FAR -- the elapsed part of `demand`. */
+  total: number
+  /** Counted in `placed`, but placeable on no day. */
+  undated: number
+  /** Asked for, but chargeable to no DAY -- a weekly task with no weekday set. */
+  unpinned: number
+}
+
 /** One bar of the trend strip. */
 export interface WeekTrendPoint {
   key: string
@@ -416,8 +452,20 @@ export class TaskUseCases {
    * ratio already uses.
    */
   private dailyDemand(task: Task, day: Date, now: Date): number {
-    if (!task.active || task.frequency !== 'daily') return 0
     if (periodKey('daily', day) > periodKey('daily', now)) return 0
+    return this.dayTarget(task, day)
+  }
+
+  /**
+   * The same figure with no elapsed gate: what the day asks WHEN IT COMES.
+   *
+   * Only the pace line reads this, and only for the days still ahead -- a line
+   * that flattened at today would say the week wants nothing more of you, which
+   * is the opposite of what it is drawn to say. Every judgment still measures
+   * against `dailyDemand`, so nothing is ever charged before its day.
+   */
+  private dayTarget(task: Task, day: Date): number {
+    if (!task.active || task.frequency !== 'daily') return 0
     return this.isDueOn(task, day) ? task.timesPerPeriod : 0
   }
 
@@ -575,6 +623,119 @@ export class TaskUseCases {
       bands: FREQUENCIES.map((frequency) => bands.get(frequency)!),
       rows,
     }
+  }
+
+  /**
+   * One cadence's week, day by day.
+   *
+   * `tasks` is a parameter for the same reason `checkTally`'s is: the views hold
+   * that array and re-render from it, while a method reading the repository
+   * would not re-run when a check-off is written.
+   *
+   * The demand per day is the SAME figure the week-level one is built from, so
+   * a curve and its own head cannot disagree:
+   * - a `daily` task is charged to each day through `dailyDemand`, the only
+   *   period a daily owns;
+   * - a `weekly` task pinned to a weekday is charged to THAT day, which is
+   *   exactly what the weekday means -- when in the week the task is due, the
+   *   day `lateByWeekday` already measures it against. It is charged the amount
+   *   `weekExpectation` says the week asked, so it appears the moment its day
+   *   comes up and not before;
+   * - a `weekly` task with no weekday is due any day of the week, so it is
+   *   charged to none of them and reported as `unpinned`. A seventh of it on
+   *   each day is a number nobody chose.
+   * - a `monthly`, `yearly` or `once` task asks nothing of a week at all
+   *   (`weekExpectation`), so its columns carry what was done and no shelf.
+   */
+  weekdayLoad(
+    tasks: Task[],
+    referenceDate: Date,
+    frequency: TaskFrequency,
+    now: Date = new Date(),
+  ): WeekdayLoad {
+    const days = weekDates(referenceDate)
+    const key = isoWeekKey(days[0]!)
+
+    const done = [0, 0, 0, 0, 0, 0, 0]
+    const expected = [0, 0, 0, 0, 0, 0, 0]
+    // What each day adds to the pace, before it is run into a cumulative line.
+    // Whole amounts only -- the share that belongs to no day is held apart in
+    // `spread` and multiplied in at the end.
+    const step = [0, 0, 0, 0, 0, 0, 0]
+    let spread = 0
+    let placed = 0
+    let total = 0
+    let undated = 0
+
+    for (const task of tasks) {
+      if (task.frequency !== frequency) continue
+
+      for (const completion of task.completions) {
+        if (this.placeCompletion(completion) !== key) continue
+        placed += 1
+        const day = this.completionDay(completion)
+        if (day) done[isoWeekday(day) - 1]! += 1
+        else undated += 1
+      }
+
+      total += this.weekExpectation(task, days, now)
+
+      if (frequency === 'daily') {
+        days.forEach((day, index) => {
+          expected[index]! += this.dailyDemand(task, day, now)
+          step[index]! += this.dayTarget(task, day)
+        })
+        continue
+      }
+
+      if (frequency !== 'weekly' || !task.active) continue
+
+      // What the WEEK asks of it, elapsed or not: the same amount
+      // `weekExpectation` reports, asked on the day it comes up rather than
+      // only once that day has passed.
+      const pinned = task.weekday !== undefined ? days[task.weekday - 1]! : days[6]!
+      if (!this.isDueOn(task, pinned)) continue
+      const amount = task.timesPerPeriod
+
+      if (task.weekday !== undefined) {
+        // Pinned: the whole amount lands on its own day, both as that day's
+        // demand and as the step the pace takes there.
+        expected[task.weekday - 1]! += this.weekExpectation(task, days, now)
+        step[task.weekday - 1]! += amount
+      } else {
+        // No weekday: due any day of the week, so no DAY may be charged with it
+        // -- `expected` stays empty and it is reported as `unpinned`. The PACE
+        // still spreads it evenly, and that is a different claim: not "this day
+        // owes a seventh", but "a week's work needs a week's rhythm, and by
+        // Wednesday a quarter of it untouched is behind".
+        spread += amount
+      }
+    }
+
+    // The pace is the running sum: what the week wants done by the END of each
+    // day, so the line it draws ends on the week's whole demand.
+    //
+    // The spread share is MULTIPLIED in rather than added a seventh at a time:
+    // a seventh is not representable, and seven of them come to 2.9999999999996
+    // -- which is a `meta 22.99999999999999` on the plot, not a rounding to hide
+    // at the label. At the last day the factor is exactly 1, so the line lands
+    // on a whole number by construction.
+    const pace: number[] = []
+    let running = 0
+    step.forEach((amount, index) => {
+      running += amount
+      pace.push(running + (spread * (index + 1)) / 7)
+    })
+
+    // What the week asked and no day could be charged with. Derived rather than
+    // counted, so it cannot drift from the two figures it sits between.
+    const unpinned = total - expected.reduce((sum, count) => sum + count, 0)
+
+    // Summed from whole amounts rather than read off the end of the pace, so it
+    // is an integer whatever the arithmetic above did.
+    const demand = step.reduce((sum, amount) => sum + amount, 0) + spread
+
+    return { done, expected, pace, demand, placed, total, undated, unpinned }
   }
 
   /**
@@ -1008,11 +1169,45 @@ export class TaskUseCases {
   }
 
   /**
-   * The single predicate the views filter by: the task existed then, and its
-   * weekday (if any) has come up.
+   * A finished one-off belongs to the DAY it was finished on, and to no other.
+   *
+   * Every other cadence re-arms, so a done period stays on the page it belongs
+   * to and the next one opens by itself. A one-off has a single period that
+   * never ends, so without this it would sit on the list forever, struck
+   * through, on a page whose whole job is what is still open. Hiding it is safe
+   * in a way it was not before the registry existed: `/tasks` shows every task
+   * whether or not it is due, so the row is still reachable, still editable and
+   * still deletable.
+   *
+   * Its moment is what answers "which day", so a check-off written before `at`
+   * existed cannot be placed -- those keep showing, which is the reading the
+   * app has always given them rather than a task quietly vanishing on deploy.
+   */
+  private settledElsewhere(task: Task, referenceDate: Date): boolean {
+    if (task.frequency !== 'once') return false
+
+    const key = periodKey('once', referenceDate)
+    const entries = task.completions.filter((completion) => completion.key === key)
+    if (entries.length < task.timesPerPeriod) return false
+
+    const dated = entries.filter((completion) => completion.at !== undefined)
+    if (!dated.length) return false
+
+    const dayKey = periodKey('daily', referenceDate)
+    return !dated.some((completion) => periodKey('daily', completion.at!) === dayKey)
+  }
+
+  /**
+   * The single predicate the views filter by: the task existed then, its
+   * weekday (if any) has come up, and it is not a one-off that was finished on
+   * some other day.
    */
   isDueOn(task: Task, referenceDate: Date = new Date()): boolean {
-    return this.existsIn(task, referenceDate) && this.appearsOn(task, referenceDate)
+    return (
+      this.existsIn(task, referenceDate) &&
+      this.appearsOn(task, referenceDate) &&
+      !this.settledElsewhere(task, referenceDate)
+    )
   }
 
   /**

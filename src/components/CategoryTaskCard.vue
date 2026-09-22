@@ -10,7 +10,7 @@ import TaskStamp from '@/components/TaskStamp.vue'
 import CompletionGauge from '@/components/CompletionGauge.vue'
 import TaskInfoLink from '@/components/TaskInfoLink.vue'
 import CategoryInfoLink from '@/components/CategoryInfoLink.vue'
-import { isBandSpotlight, type Spotlight } from '@/components/spotlight'
+import type { Spotlight } from '@/components/spotlight'
 
 /*
  * The home page's rack unit, and only that: a category's tasks at the density
@@ -25,8 +25,8 @@ const props = defineProps<{
   /** Position in the rack, used only to stagger the reveal. */
   index: number
   /**
-   * Which readout is holding the page, if any. The card lights the rows it
-   * counts and stands the rest down.
+   * Which readout is holding the page, if any -- `both` being the pair the page
+   * opens on. The card lights the rows it counts and stands the rest down.
    */
   spotlight?: Spotlight | null
 }>()
@@ -102,9 +102,13 @@ const rows = computed(() =>
           ? isLate
           : props.spotlight === 'now'
             ? isNow
-            : props.spotlight
-              ? task.frequency === props.spotlight
+            : props.spotlight === 'both'
+              ? isLate || isNow
               : false,
+      // Which ink the ring takes. The ROW answers this rather than the card,
+      // because under `both` one unit holds rows of each kind -- and a fault
+      // outranks a prompt wherever both could apply.
+      spotInk: isLate ? 'late' : 'now',
       currentTurn: state.current[0],
       slots: turnSlots(task.turns, task.timesPerPeriod),
       groups: turnPlan(task.turns, task.timesPerPeriod).groups.map((group) => ({
@@ -165,9 +169,6 @@ const progress = computed(() =>
       unfiled: !category,
       settled,
       stood: spotlight && !spotlit,
-      'spot-late': spotlight === 'late',
-      'spot-now': spotlight === 'now',
-      'spot-band': isBandSpotlight(spotlight),
     }"
     :style="{ ...inkVars, '--i': index }"
   >
@@ -215,6 +216,7 @@ const progress = computed(() =>
           late: row.isLate,
           now: row.isNow,
           spot: row.spotlit,
+          [`spot-${row.spotInk}`]: row.spotlit,
           stood: spotlight && !row.spotlit,
         }"
       >
@@ -435,28 +437,23 @@ const progress = computed(() =>
 }
 
 /*
- * THE SPOTLIGHT. Tapping a readout above turns the page into an answer to that
- * one question: the rows it counts are lit and lifted, everything else stands
- * down. `--spot-ink` is set by which readout is holding the page, so one set of
- * rules serves both and the fault cannot borrow the accent or the reverse.
+ * THE SPOTLIGHT. The readouts above turn the page into an answer to what they
+ * count: the rows they hold are lit and lifted, everything else stands down.
+ * `--spot-ink` is set on the ROW by the state it is lit for, so one set of
+ * rules serves both readouts, the fault cannot borrow the accent or the
+ * reverse, and the pair the page opens on can light a unit holding one of each.
  *
  * `z-index` because a lit row's ring has to cross its neighbours' borders, and
  * the unit clips at 14px of padding, which is why the bloom stays modest.
  */
-.unit.spot-late {
+.task.spot-late {
   --spot-ink: var(--color-alarm);
   --spot-glow: var(--color-alarm-dim);
 }
 
-.unit.spot-now {
+.task.spot-now {
   --spot-ink: var(--color-accent-text);
   --spot-glow: var(--color-accent-dim);
-}
-
-/* A gauge holding the page: the band's own ink, inherited from the stratum. */
-.unit.spot-band {
-  --spot-ink: var(--band-ink);
-  --spot-glow: color-mix(in srgb, var(--band-ink) 18%, transparent);
 }
 
 .task.spot {

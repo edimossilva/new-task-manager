@@ -16,11 +16,21 @@ const params = new URLSearchParams(location.search)
  * `?at=20:30` freezes the wall clock, which is the only way to look at a state
  * that belongs to a particular hour -- a turn running, a deadline passed, the
  * day closing -- without waiting for it.
+ *
+ * `?at=2026-09-25T20:30` moves the DAY as well, for the states that belong to a
+ * weekday rather than to an hour: a Sunday task with no catch-up window, a
+ * Monday-pinned weekly one, a week graph read on a Friday instead of always on
+ * the morning the screenshot happens to be taken.
  */
 const frozen = params.get('at')
 if (frozen) {
-  const [hours = 0, minutes = 0] = frozen.split(':').map(Number)
   const fixed = new Date()
+  const [datePart, timePart = ''] = frozen.includes('T') ? frozen.split('T') : ['', frozen]
+  if (datePart) {
+    const [year = 0, month = 1, day = 1] = datePart.split('-').map(Number)
+    fixed.setFullYear(year, month - 1, day)
+  }
+  const [hours = 0, minutes = 0] = timePart.split(':').map(Number)
   fixed.setHours(hours, minutes, 0, 0)
   // A proxy rather than a subclass: `instanceof`, the statics and the prototype
   // all survive untouched, and only the no-argument form answers the frozen

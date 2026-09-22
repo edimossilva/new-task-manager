@@ -1,16 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
-import type { Weekday } from '@/entities'
 import {
   FREQUENCY_LABELS,
   INKS,
-  WEEKDAY_SHORT,
   formatWeekRange,
-  isSameDay,
   isoWeekKey,
   parseDailyKey,
   periodKey,
-  weekDates,
   weekStart,
 } from '@/entities'
 import type { WeekTaskRow, WeekTrendPoint } from '@/usecases'
@@ -22,6 +18,7 @@ import { usePeriodSelection } from '@/composables/use-period-selection'
 import { buildCategoryRack } from '@/composables/use-category-rack'
 import FrequencyBadge from '@/components/FrequencyBadge.vue'
 import WeekdayBadge from '@/components/WeekdayBadge.vue'
+import WeekStrip from '@/components/WeekStrip.vue'
 
 const store = useTaskStore()
 const categoryStore = useCategoryStore()
@@ -104,40 +101,6 @@ const bands = computed(() =>
       ink: { '--band-ink': `var(--color-freq-${band.frequency})` },
     })),
 )
-
-/**
- * Seg..Dom.
- *
- * Every bar is drawn on ONE scale -- the tallest thing in the week, done or
- * asked for -- so the seven are comparable and the target notch sits at the
- * height it means. Scaling each bar to its own day would make a 2/2 day look
- * like a 9/9 one.
- *
- * The day's demand is the DAILIES' and nothing else, which is why the strip's
- * totals do not add up to the week's: a weekly, monthly or yearly target belongs
- * to a span of days, not to one of them.
- */
-const weekdays = computed(() => {
-  const done = summary.value.byWeekday
-  const asked = summary.value.expectedByWeekday
-  const scale = Math.max(1, ...done, ...asked)
-  const todayKey = periodKey('daily', today.value)
-  return weekDates(monday.value).map((date, index) => {
-    const count = done[index] ?? 0
-    const expected = asked[index] ?? 0
-    return {
-      date,
-      label: WEEKDAY_SHORT[(index + 1) as Weekday],
-      done: count,
-      expected,
-      percent: (count / scale) * 100,
-      notch: (expected / scale) * 100,
-      short: expected > count,
-      isToday: isSameDay(date, today.value),
-      isFuture: periodKey('daily', date) > todayKey,
-    }
-  })
-})
 
 /** The strip's own total, so the block can state the scale it is drawn on. */
 const dayTotals = computed(() => ({
@@ -328,40 +291,17 @@ const roll = computed(() =>
             {{ dayTotals.done }}<span class="slash">/</span>{{ dayTotals.expected }}
           </span>
         </div>
-        <ol class="days">
-          <li
-            v-for="day in weekdays"
-            :key="day.label"
-            class="day"
-            :class="{ today: day.isToday, ahead: day.isFuture }"
-          >
-            <!--
-              The notch is the day's own target, drawn on the shared scale: the
-              fill reaching it is the whole reading, and a bar past it is a day
-              that carried more than its share.
-            -->
-            <span class="day-bar" :title="`${day.label}: ${day.done} de ${day.expected} marcacoes`">
-              <span
-                class="day-fill"
-                :class="{ short: day.short }"
-                :style="{ height: `${day.percent}%` }"
-              ></span>
-              <span
-                v-if="day.expected"
-                class="day-notch"
-                :style="{ bottom: `${day.notch}%` }"
-                aria-hidden="true"
-              ></span>
-            </span>
-            <span class="day-count figure">
-              {{ day.done
-              }}<template v-if="day.expected"
-                ><span class="slash">/</span>{{ day.expected }}</template
-              >
-            </span>
-            <span class="day-label">{{ day.label }}</span>
-          </li>
-        </ol>
+        <!--
+          The strip is the shared component: home draws the same seven bars to
+          place the day it is browsing, and one instrument cannot have two
+          drawings. Not interactive here -- this page's unit is a week, and
+          picking a day from it would move a bar other than the one tapped.
+        -->
+        <WeekStrip
+          :monday="monday"
+          :done="summary.byWeekday"
+          :expected="summary.expectedByWeekday"
+        />
         <p class="foot figure">
           <template v-if="summary.undated"
             >{{ summary.undated }} sem dia definido &middot;
@@ -612,58 +552,6 @@ const roll = computed(() =>
   @apply mt-4 text-[0.875rem] text-fg-faint;
 }
 
-/* The weekday strip: seven columns, always, so the week keeps its shape. */
-.days {
-  @apply grid grid-cols-7 gap-1.5 items-end;
-}
-
-.day {
-  @apply flex flex-col items-center gap-1;
-}
-
-.day-bar {
-  @apply relative flex w-full h-12 items-end border border-line-strong overflow-hidden;
-  background-image: repeating-linear-gradient(45deg, transparent 0 3px, var(--color-line) 3px 4px);
-}
-
-.day-fill {
-  @apply w-full;
-  background: var(--color-done);
-  transition: height 420ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.day.today .day-bar {
-  @apply border-accent;
-}
-
-.day.ahead .day-bar {
-  @apply opacity-40;
-}
-
-.day-count {
-  @apply text-[0.6875rem] text-fg;
-}
-
-/* The day's target on the shared scale. A hairline, not a second bar: it is a
-   reference the fill is read against, not a quantity of its own. */
-.day-notch {
-  @apply absolute left-0 right-0 h-px;
-  background: var(--color-fg);
-}
-
-/* Short of its own target: the fill says so before the figures are read. */
-.day-fill.short {
-  background: color-mix(in srgb, var(--color-done) 55%, var(--color-void));
-}
-
-.day-label {
-  @apply font-mono text-[0.5625rem] uppercase tracking-[0.08em] text-fg-faint;
-}
-
-.day.today .day-label {
-  @apply text-accent-text;
-}
-
 /* A horizon or a category as one ruled line: name, meter, figure. */
 .lines {
   @apply flex flex-col gap-2;
@@ -862,7 +750,6 @@ const roll = computed(() =>
 
 @media (prefers-reduced-motion: reduce) {
   .bar-fill,
-  .day-fill,
   .line-fill,
   .unit-fill,
   .fill {

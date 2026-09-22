@@ -12,12 +12,29 @@ import {
 import { usePeriodStore } from '@/stores/period-store'
 import { usePeriodSelection } from '@/composables/use-period-selection'
 
+/**
+ * `collapsed` folds the week strip away behind the month button, which is what
+ * Hoje asks for: the curves at the top of that page are already seven tappable
+ * days, and two rows of them is one row too many. The head keeps the arrows and
+ * the month, so the day can still be stepped without opening anything.
+ */
+const props = defineProps<{ collapsed?: boolean }>()
+
 const store = usePeriodStore()
 const { referenceDate, today, isToday } = usePeriodSelection()
 
 const monthId = useId()
 const yearId = useId()
-const showJump = ref(false)
+
+/**
+ * One disclosure for both halves. The strip and the month/year selects are the
+ * same question at two resolutions, and a panel with two independent toggles is
+ * a panel nobody reads twice.
+ */
+const open = ref(false)
+
+/** Folded away only where the caller asked for it; everywhere else it just is. */
+const stripOpen = computed(() => !props.collapsed || open.value)
 
 /**
  * The ISO week containing the selected day, Monday first.
@@ -68,14 +85,9 @@ function inRange(date: Date): boolean {
         &lsaquo;
       </button>
 
-      <button
-        type="button"
-        class="month-btn"
-        :aria-expanded="showJump"
-        @click="showJump = !showJump"
-      >
+      <button type="button" class="month-btn" :aria-expanded="open" @click="open = !open">
         {{ monthLabel }}
-        <span class="month-caret" :class="{ open: showJump }">&#9662;</span>
+        <span class="month-caret" :class="{ open }">&#9662;</span>
       </button>
 
       <button
@@ -106,7 +118,7 @@ function inRange(date: Date): boolean {
       there to move the day, not to be read, so it gives up height to the work
       below it while every chip stays a full-width thumb target.
     -->
-    <ol class="strip">
+    <ol v-if="stripOpen" class="strip">
       <li v-for="date in weekDays" :key="date.toISOString()">
         <button
           type="button"
@@ -127,7 +139,7 @@ function inRange(date: Date): boolean {
     </ol>
 
     <Transition name="jump">
-      <div v-if="showJump" class="jump">
+      <div v-if="open" class="jump">
         <div>
           <label :for="monthId">Mes</label>
           <select :id="monthId" v-model.number="month" class="select-compact">
