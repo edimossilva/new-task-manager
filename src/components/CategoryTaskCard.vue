@@ -10,7 +10,6 @@ import TaskStamp from '@/components/TaskStamp.vue'
 import CompletionGauge from '@/components/CompletionGauge.vue'
 import TaskInfoLink from '@/components/TaskInfoLink.vue'
 import CategoryInfoLink from '@/components/CategoryInfoLink.vue'
-import type { Spotlight } from '@/components/spotlight'
 
 /*
  * The home page's rack unit, and only that: a category's tasks at the density
@@ -21,14 +20,18 @@ import type { Spotlight } from '@/components/spotlight'
 const props = defineProps<{
   /** Absent for the unfiled unit, which is a real bucket rather than a category. */
   category?: Category
+  /**
+   * The category's whole set for this band. Every READING on the unit is taken
+   * from it -- the head's ratio, the meter, the strike -- whatever is drawn.
+   */
   tasks: Task[]
+  /**
+   * The rows to draw, when a lit readout has the page narrowed to what it
+   * counts. Absent means all of them, which is the page's resting state.
+   */
+  shown?: Task[]
   /** Position in the rack, used only to stagger the reveal. */
   index: number
-  /**
-   * Which readout is holding the page, if any -- `both` being the pair the page
-   * opens on. The card lights the rows it counts and stands the rest down.
-   */
-  spotlight?: Spotlight | null
 }>()
 
 const store = useTaskStore()
@@ -56,12 +59,16 @@ const inkVars = computed(() => {
  * and the template used to ask five of them per row -- the count twice over, for
  * the stamp and for the gauge.
  *
+ * Only the rows the page is SHOWING, which under a lit readout is the part of
+ * the category it counts. The readings below read `tasks` instead: they are the
+ * category's own, and a filter has no business in them.
+ *
  * `today` is the clock rather than `referenceDate`: a turn passes during the
  * browsed day, and a pinned `referenceDate` deliberately does not subscribe to
  * the tick, so without it a row would freeze in the turn it first rendered in.
  */
 const rows = computed(() =>
-  props.tasks.map((task) => {
+  (props.shown ?? props.tasks).map((task) => {
     const count = store.completionCountFor(task, referenceDate.value)
     const state = store.turnState(task, referenceDate.value, today.value)
     const late = new Set(state.late)
@@ -95,20 +102,6 @@ const rows = computed(() =>
       due: store.dueByNow(task, referenceDate.value, today.value),
       isLate,
       isNow,
-      // What the lit readout is pointing at. `isNow` already means an OPEN slot
-      // in the running turn, so "not checked" needs no second test.
-      spotlit:
-        props.spotlight === 'late'
-          ? isLate
-          : props.spotlight === 'now'
-            ? isNow
-            : props.spotlight === 'both'
-              ? isLate || isNow
-              : false,
-      // Which ink the ring takes. The ROW answers this rather than the card,
-      // because under `both` one unit holds rows of each kind -- and a fault
-      // outranks a prompt wherever both could apply.
-      spotInk: isLate ? 'late' : 'now',
       currentTurn: state.current[0],
       slots: turnSlots(task.turns, task.timesPerPeriod),
       groups: turnPlan(task.turns, task.timesPerPeriod).groups.map((group) => ({
@@ -133,14 +126,11 @@ const rows = computed(() =>
  * notches on this unit's scale, so the third one moves the meter rather than the
  * card reading zero until the task lands. Where nothing repeats, every task is
  * worth one check and the ratio is the task count it always was.
+ *
+ * It reads the category's WHOLE set, never the rows on screen: with a readout
+ * filtering the page, checking a late row off drops it, and a ratio counting
+ * only what was late would fall from `0/2` to `0/1` for work done.
  */
-/*
- * A unit holding nothing the lit readout counts stands down as a whole, so the
- * eye can skip the card rather than read every row in it. Inside a unit that
- * does hold one, only the rows that are not it dim.
- */
-const spotlit = computed(() => rows.value.some((row) => row.spotlit))
-
 const activeTasks = computed(() => props.tasks.filter((task) => task.active))
 const checks = computed(() => store.checkTally(activeTasks.value, referenceDate.value))
 const hasRatio = computed(() => activeTasks.value.length > 0)
@@ -168,7 +158,6 @@ const progress = computed(() =>
     :class="{
       unfiled: !category,
       settled,
-      stood: spotlight && !spotlit,
     }"
     :style="{ ...inkVars, '--i': index }"
   >
@@ -215,9 +204,6 @@ const progress = computed(() =>
           off: !row.task.active,
           late: row.isLate,
           now: row.isNow,
-          spot: row.spotlit,
-          [`spot-${row.spotInk}`]: row.spotlit,
-          stood: spotlight && !row.spotlit,
         }"
       >
         <TaskStamp
@@ -437,79 +423,13 @@ const progress = computed(() =>
 }
 
 /*
- * THE SPOTLIGHT. The readouts above turn the page into an answer to what they
- * count: the rows they hold are lit and lifted, everything else stands down.
- * `--spot-ink` is set on the ROW by the state it is lit for, so one set of
- * rules serves both readouts, the fault cannot borrow the accent or the
- * reverse, and the pair the page opens on can light a unit holding one of each.
- *
- * `z-index` because a lit row's ring has to cross its neighbours' borders, and
- * the unit clips at 14px of padding, which is why the bloom stays modest.
+ * A row enters and leaves as the readouts above filter the page, so the two
+ * transitions the rack used to need for standing rows down are spent on the
+ * arrival instead.
  */
-.task.spot-late {
-  --spot-ink: var(--color-alarm);
-  --spot-glow: var(--color-alarm-dim);
-}
-
-.task.spot-now {
-  --spot-ink: var(--color-accent-text);
-  --spot-glow: var(--color-accent-dim);
-}
-
-.task.spot {
-  @apply relative z-[1];
-  background-image: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--spot-ink) 22%, transparent),
-    color-mix(in srgb, var(--spot-ink) 7%, transparent)
-  );
-  box-shadow:
-    0 0 0 2px var(--spot-ink),
-    0 0 12px var(--spot-glow);
-  animation: spot-strike 620ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-/*
- * Stood down, not hidden: still legible, still tappable. Dimming the whole unit
- * when it holds nothing is what lets the eye skip a card instead of reading it.
- */
-.task.stood {
-  @apply opacity-30;
-}
-
-.unit.stood {
-  @apply opacity-40;
-}
-
 .task,
 .unit {
-  transition:
-    opacity 260ms ease,
-    box-shadow 260ms ease;
-}
-
-/* Two beats, then it settles: the strike is what makes the answer findable. */
-@keyframes spot-strike {
-  0% {
-    box-shadow:
-      0 0 0 2px var(--spot-ink),
-      0 0 0 0 var(--spot-glow);
-  }
-  35% {
-    box-shadow:
-      0 0 0 3px var(--spot-ink),
-      0 0 0 9px var(--spot-glow);
-  }
-  70% {
-    box-shadow:
-      0 0 0 2px var(--spot-ink),
-      0 0 0 0 var(--spot-glow);
-  }
-  100% {
-    box-shadow:
-      0 0 0 2px var(--spot-ink),
-      0 0 12px var(--spot-glow);
-  }
+  transition: box-shadow 260ms ease;
 }
 
 /*

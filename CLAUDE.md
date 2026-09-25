@@ -491,66 +491,99 @@ layers.
   - The chip row is dropped entirely when a task has nothing to say there, rather than spending
     its top margin on an empty line, and the info link is pulled up out of the row's padding so a
     44px target cannot make a row taller than its 30px stamp.
-  - **The annunciators** sit above the gauges: a wrapping row of self-sizing segments, laid out
-    the way the gauge cluster under them is, so the page keeps one rhythm and two stacked
-    full-width bars do not read as a pile of notices. Each segment appears only when it has
-    something to say -- an annunciator that is always lit annunciates nothing -- and a lone one
-    stretches to the full width.
-    - **Atrasadas** is hazard-hatched: the app's own 45-degree meter hatch coarsened from a 3px
-      scale pitch to a 6px hazard pitch, so a warning and a scale cannot be confused. Its lamp
-      pings rather than blinks; the global `prefers-reduced-motion` blanket settles it to a
-      plain dot. Each band head repeats the figure for its own horizon.
+  - **The filter rail** sits above the gauges: a recessed housing (`well`, hairline, inset
+    shadow) holding a bank of KEYS, the way a console carries its switches. They were two
+    banner-width annunciator segments, and the width was the last thing still saying
+    "annunciator" about a pair of buttons that filter the page -- a control spanning the column
+    reads as a notice you cannot press. A key appears only when it has something to say, which
+    is the annunciator rule kept: one that is always lit annunciates nothing.
+    - A key stands **proud** of the rail while it is up -- panel ground, the app's panel shadow,
+      a hairline, and its own ink kept to the lamp so it still says WHICH question it is -- and
+      takes that ink **whole**, flush, with the shadow gone, while it is down. Plus 1px of
+      travel on `:active`: a switch that does not move under the thumb is a picture of one.
+    - **Atrasadas** keeps the hazard hatch: the app's own 45-degree meter hatch coarsened from a
+      3px scale pitch to a 6px hazard pitch, so a warning and a scale cannot be confused. Each
+      band head repeats the figure for its own horizon.
+      - Its lamp now pings only while the key is **up**. A fault nobody is looking at is worth a
+        pulse; once the key is down the whole page is the answer to it, and a lamp still
+        flashing inside the control you just pressed is the panel arguing with itself.
     - **Para agora** is deliberately NOT hatched -- a turn that is simply running is not a
       hazard -- and its lamp is the **same caret the rows wear in their gutter**, so the figure
       here and the marks down the page are visibly one instrument: every row carrying that
-      caret is one of the N counted. It names its turn on the right, above 380px.
+      caret is one of the N counted. It names its turn above 380px, the first thing to go when
+      the rail gets tight; the `Filtro` legend is the second, below 480px, since the keys name
+      themselves and the legend does not.
+    - **`Tudo`** is the way out, and it is on the rail only while there is something to let go
+      of. Releasing a held pair takes two taps, and this is the one control that can say in a
+      word what the page looks like afterwards. It is **dashed and flat** -- the app's grammar
+      for a gap where nothing is being asked -- so it reads as the absence of a filter rather
+      than as a third question, and it sits at the END of the rail, where a reset belongs and
+      where a narrow rail's second row puts it anyway.
     - The two counts **overlap on purpose**. A task whose morning was missed and whose afternoon
       is running is in both, because "what did I miss" and "what is due now" are different
       questions and it is the honest answer to each.
-    - The counts are set at the LABEL's own size, so each segment is one line of panel type
-      rather than a display figure with a caption under it. The lamp, the ground and the border
-      carry the readout; the number only has to be legible, and a big one competed with the
-      gauge figures directly below for no gain.
-    - **Both segments are BUTTONS, and tapping one spotlights what it counts**: its rows take a
-      ring and a lit field and strike once, every other row stands down to 30%, and a card
-      holding nothing the readout counts dims as a whole so the eye can skip it rather than read
-      every row in it. `--spot-ink` is set on the ROW by the state it is lit for, so one set of
-      rules serves both readouts and the fault cannot borrow the accent or the reverse. Stood-down
-      rows stay legible and still tappable -- this is emphasis, not a filter.
-    - **The page OPENS on both**, the `both` state: what was missed and what is running are the
-      two things a day asks of you, and the panel should already be pointing at them. Tapping a
-      readout from there NARROWS the page to that one question (`both` is not `which`, so the
-      existing toggle does it), and tapping it again releases the page. There is no way back to
-      `both` inside a day, which is the trade for a default that needs no second control.
-      Under `both` a unit can hold rows of each kind, which is why the ink moved to the row: a
-      fault outranks a prompt wherever both could apply, so a row that is late and running reads
-      alarm.
-    - A spotlight lighting NOTHING would stand every row on the page down, so `litSpotlight` --
-      what the cards are actually given -- falls back to none when the sets it holds are empty.
-      That is the morning with nothing late and nothing running, and it is also the moment the
-      last counted row is checked off.
-    - The spotlight is a plain `ref` in `HomeView` handed down as a prop rather than a store: it
-      is ephemeral view state. It returns to the default when the browsed DAY changes, since the
-      sets are computed against a date and one left on from Monday would light a different
-      answer. The watcher keys on the day KEY, never on `referenceDate` itself: while nothing is
-      pinned that Date is the clock, and a watcher on it fired every sixty seconds -- which
-      silently put the spotlight out a minute after any tap.
-    - `Spotlight` lives in `src/components/spotlight.ts` because the view and the card both need
-      the type and a `<script setup>` block cannot export one. A band's frequency was briefly
-      one of its values -- a gauge tap LIT its stratum rather than narrowing to it, and scrolled
-      the page there -- and that is gone: a gauge now filters, the two controls are alternatives,
-      and one mechanism wearing two hats was what made a lit band under a spotlight unreadable.
+    - The counts are set at the LABEL's own size, bold rather than large: a key is one line of
+      panel type, and a display figure with a caption under it competed with the gauge figures
+      directly below for no gain. The lamp, the ground and the border carry the readout; the
+      number only has to be legible.
+    - **Both keys are BUTTONS, and a held one FILTERS the page to what it counts**: the rows
+      it holds stay and everything else goes, units and whole bands with them -- a card holding
+      nothing the readout counts has nothing to say, and an empty band is a rule and a ratio
+      over a hole in the page. It was emphasis first (a ring on the counted rows, the rest stood
+      down to 30%), and the rows that were not the answer still had to be read past; a page that
+      IS the answer needs no ink to say which rows those are, so `--spot-ink`, the strike and the
+      stand-down are gone and the row's own `Atrasada` rail and running-turn caret carry it.
+    - **What it filters is the ROWS, never a READING.** A unit is racked from its category's
+      whole set and handed the shown rows beside it (`tasks` and `shown`), so the ratio in its
+      head, its meter and its strike stay the day's, as the gauges and the band heads above them
+      are. Narrowing those too would cost the figure its meaning the moment it is used: checking
+      a late row off drops it from the page, so a ratio counting only what is late would fall
+      from `0/2` to `0/1` for work DONE, and the one meter that should have moved never would.
+    - **The two readouts are INDEPENDENT switches**, held in a `Set<Readout>` rather than in one
+      three-valued state: each holds its own question, the page shows the UNION of the ones
+      held, and a second tap on one lets it go. So a plain switch, `aria-pressed` and all --
+      tapping a held readout releases it rather than soloing it, which is the one thing to know
+      when reading the old behaviour out of a screenshot.
+      - It replaced `'late' | 'now' | 'both'`, where a tap could only narrow from `both` to one
+        readout and then release: the pair the page opens on was a door that shut behind you,
+        and nothing inside a day could rebuild it. A `Set` gets it back by having no special
+        value for the pair -- `both` was never a third question, only the two of them at once.
+    - **The page OPENS with both held**: what was missed and what is running are the two things
+      a day asks of you, and the page is the answer to them before anything is tapped. Holding
+      neither is the whole day, which is where a second tap on each lands.
+    - A readout holding NOTHING would empty the page, so `litReadouts` -- what the racks are
+      actually filtered by -- drops it from the set instead. That is the morning with nothing
+      late and nothing running, and it is also the moment the last row a readout counts is
+      checked off: an empty set is no filter at all, so the whole day comes back. The conditions
+      are the segments' OWN (`lateCount`, `nowLit`), so a readout on the page and the rows it
+      leaves standing cannot disagree about whether it is holding anything.
+    - The held set is a plain `ref` in `HomeView`: ephemeral view state, and since the filter
+      happens where the racks are built, nothing below the view knows about it. `Spotlight` was
+      its own module while the card took it as a prop and is now the view's own `Readout`. It
+      returns to the default when the browsed DAY changes, since the sets are computed against a
+      date and readouts left held from Monday would answer a different day. The watcher keys on
+      the day KEY, never on `referenceDate` itself: while nothing is pinned that Date is the
+      clock, and a watcher on it fired every sixty seconds -- which silently gave the whole page
+      back a minute after any tap.
+    - A band's frequency was briefly one of these values -- a gauge tap LIT its stratum rather
+      than narrowing to it, and scrolled the page there -- and that is gone: both controls now
+      filter, they are alternatives, and one mechanism wearing two hats was what made a lit band
+      under a spotlight unreadable.
     - Making them buttons gave up the `role="status"` announcement, which is the right trade
       once they are interactive: each carries an `aria-label` naming the action and
       `aria-pressed` for the state.
-    - **`background-color: var(--color-...)` does not paint on these two segments.** It computes
-      to transparent while the SAME variable resolves normally for `color`, for `border-color`,
+    - **`background-color: var(--color-...)` does not paint on these keys.** It computes to
+      transparent while the SAME variable resolves normally for `color`, for `border-color`,
       and inside `color-mix()` or a gradient. The mechanism is not understood -- it is not the
       `--color-accent-text` reference chain, since `--color-alarm` is a plain hex and fails
-      identically. Both pressed grounds are therefore painted as a flat one-stop
-      `linear-gradient`, with the annunciator's hazard hatch layered over it. The failure is
-      SILENT and reads exactly like a specificity problem, so check the rendered pixels rather
-      than the rule: this shipped broken once, with both readouts looking unpressed.
+      identically. Both held grounds are therefore painted as a flat one-stop
+      `linear-gradient`, with the hazard hatch layered over it. The failure is SILENT and reads
+      exactly like a specificity problem, so check the rendered pixels rather than the rule:
+      this shipped broken once, with both readouts looking unpressed.
+      - Its twin trap is the opposite mistake, and the harness's `probe` exists because of it: a
+        key photographed right after a CLICK shows the property it just changed at its OLD
+        value, which reads exactly like a rule that never applied. The pixels answer what was
+        painted; only the computed value answers whether the rule applies.
   - The overdue set is resolved **once per render** into a `Set` of ids. `isLateOn` walks a
     task's check-offs and the status sort calls its comparator O(n log n) times, so asking the
     question inside the comparator re-walked the same completions on every comparison.
@@ -662,20 +695,20 @@ layers.
       cadence, tapping it again gives the page back. The reading and the control are the same
       object, which is what keeps the page from growing a row of filter chips saying what the
       gauges already say. The CLUSTER never filters itself -- the others stand down to 45% but
-      stay on screen and stay tappable, the spotlight's own rule one altitude up, because a
-      control that hides itself cannot be switched back.
+      stay on screen and stay tappable, and it is the one thing on the page that is exempt:
+      everything the two filters drop is dropped outright, but a control that hides itself
+      cannot be switched back.
     - A held gauge is ringed in its OWN band ink, never the accent: the cluster's whole job is
       mapping a colour to a stratum, and an Anual card turning amber when picked would break the
       one mapping it exists for.
-    - It is a plain `ref` in `HomeView` beside the spotlight, cleared when the browsed day
+    - It is a plain `ref` in `HomeView` beside the held readouts, cleared when the browsed day
       changes: a band with work on Monday can be empty today, and a page filtered to nothing
       explains itself to nobody.
-    - **The horizon and the spotlight are ALTERNATIVES, and taking one hands the page over to
-      it.** Picking a horizon releases the spotlight, because a horizon under one is the worst
-      of both -- you asked to see the dailies and most of them are standing down at 30% for
-      being neither late nor in the running turn. Tapping a readout releases the horizon for the
-      mirror reason: a readout counting rows a filter is hiding is a readout lying about its own
-      figure. Neither is RESTORED on the way back out; by then the choices are the user's, and a
+    - **The horizon and the readouts are ALTERNATIVES, and taking one hands the page over to
+      it.** Picking a horizon releases the readouts, because two filters at once is a page
+      narrowed twice over -- you asked to see the dailies and were shown the three of them that
+      are late. Tapping a readout releases the horizon for the mirror reason: a readout counting
+      rows a horizon is hiding is a readout lying about its own figure. Neither is RESTORED on the way back out; by then the choices are the user's, and a
       default springing back is the page arguing with them.
   - The **home page** stacks its units in one **band per frequency**, `FREQUENCIES` order: Unica
     on top, then Diaria, Semanal, Mensal, Anual. Each band holds its own rack, so a category with a daily
@@ -894,15 +927,18 @@ layers.
 
 `yarn harness` (port 5199) runs the real views, stores and use cases against fabricated data,
 with `@/adapters/repositories` aliased to in-memory stand-ins. It exists because the states this
-app cares about -- an overdue turn, a running one, a category with nothing left, a row under a
-spotlight -- take a sign-in, several tasks and the right hour to reach in the real app.
+app cares about -- an overdue turn, a running one, a category with nothing left, a page under a
+lit readout -- take a sign-in, several tasks and the right hour to reach in the real app.
 `preview-harness/README.md` has the query parameters (`theme`, `accent`, `at`, `click`) and the
 headless-screenshot recipe; `?at=20:30` freezes the clock, which is how a rule that only fires
 at a particular hour gets looked at at all. Two things it has already caught that nothing else
 would:
 
 - A `background-color` that silently did not paint (above). Reading the rule is not enough;
-  read the pixels.
+  read the pixels. Its mirror image came later and is why `?probe=` exists: a control
+  photographed straight after a `click` shows the property it just changed at its OLD value,
+  which is a bug report about CSS that is perfectly correct. The pixels say what was painted,
+  the probe says what the element computes, and they answer different questions.
 - Its own page once omitted the app's font links, so every screenshot rendered in fallback
   faces while looking plausible. The Vite config now lifts those links out of `index.html`, and
   `preview-harness/` sits inside `tsconfig.app.json` with its stubs typed against the real

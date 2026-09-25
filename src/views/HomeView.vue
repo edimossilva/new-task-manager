@@ -25,7 +25,6 @@ import type { WeekdayLoad } from '@/usecases'
 import { percentOf } from '@/usecases'
 import CategoryTaskCard from '@/components/CategoryTaskCard.vue'
 import PeriodSelector from '@/components/PeriodSelector.vue'
-import type { Spotlight } from '@/components/spotlight'
 import type { CurvePoint } from '@/components/TrendCurve.vue'
 import TrendCurve from '@/components/TrendCurve.vue'
 
@@ -139,7 +138,11 @@ const bands = computed(() =>
       late: tasks.filter((task) => turnCensus.value.late.has(task.id)).length,
       // The rule takes the frequency's own ink, then burns off.
       ink: { '--band-ink': `var(--color-freq-${frequency})` },
-      rack: buildCategoryRack(tasks, categoryStore.categories),
+      // The rows themselves, for `shownBands` to rack up. The rack is built
+      // there rather than here because a lit readout filters the rows, and a
+      // band's own READINGS above -- the gauge, the head, the late count --
+      // are the whole horizon's whatever is on screen.
+      items: tasks,
     }
   }).filter((band) => band.tasks.total > 0),
 )
@@ -280,7 +283,7 @@ function deltaLabel(delta: number): string {
  *
  * A gauge is already that band's reading; tapping it says "show me only this",
  * and tapping it again gives the page back. Ephemeral view state, so it lives
- * here in a ref -- the spotlight's own arrangement -- and it clears when the
+ * here in a ref -- the readouts' own arrangement -- and it clears when the
  * browsed day changes, since a band that had work on Monday can be empty today
  * and a page filtered to nothing explains itself to nobody.
  *
@@ -292,78 +295,151 @@ const horizon = ref<TaskFrequency | null>(null)
 function toggleHorizon(frequency: TaskFrequency) {
   horizon.value = horizon.value === frequency ? null : frequency
   // The two controls are ALTERNATIVES, and taking one hands the page over to
-  // it. A horizon under a spotlight is the worst of both: you asked to see the
-  // dailies and most of them are standing down at 30% because they are neither
-  // late nor in the running turn. Released rather than restored on the way back
-  // out -- by then the choices are the user's, and a default springing back is
-  // the page arguing with them.
-  spotlight.value = null
+  // it. Two filters at once is a page narrowed twice over: you asked to see the
+  // dailies and were shown the three of them that are late. Released rather
+  // than restored on the way back out -- by then the choices are the user's,
+  // and a default springing back is the page arguing with them.
+  held.value = new Set()
 }
 
-/** The bands the racks actually draw. */
-const shownBands = computed(() =>
-  horizon.value ? bands.value.filter((band) => band.frequency === horizon.value) : bands.value,
-)
+/**
+ * Which readouts are holding the page.
+ *
+ * A SET rather than one value, because the two are independent switches: each
+ * annunciator holds its own question, and what the page shows is the union of
+ * the ones held. That is what lets the pair the page opens on be rebuilt after
+ * a tap -- the earlier three-valued state could narrow from `both` to one
+ * readout and then only release, so the two questions were a door that shut
+ * behind you.
+ *
+ * It lives here rather than in its own module: the card used to take the state
+ * as a prop to light its own rows, and a held readout FILTERS the page instead,
+ * so nothing outside this view needs the type.
+ *
+ * A band's gauge is deliberately NOT one of these: a gauge narrows the page to
+ * a horizon where a readout narrows it to a question, and the two are
+ * alternatives rather than one mechanism wearing two hats.
+ *
+ * BOTH is the state the page OPENS in: what was missed and what is running are
+ * the two things a day asks of you, and the page is the answer to them before
+ * anything is tapped. Releasing both gives the whole day back.
+ *
+ * Ephemeral view state, so it lives here in a ref rather than in a store.
+ */
+type Readout = 'late' | 'now'
+
+const DEFAULT_READOUTS: Readout[] = ['late', 'now']
+
+const held = ref<Set<Readout>>(new Set(DEFAULT_READOUTS))
 
 /**
- * Which readout is holding the page.
+ * What the racks are actually filtered by.
  *
- * `both` is the state the page OPENS in: what was missed and what is running
- * are the two things a day asks of you, and the panel should be pointing at
- * them before anything is tapped. Tapping a readout then narrows the page to
- * that one question, and tapping it again releases the page entirely.
+ * A readout with NOTHING to hold is dropped from the set rather than allowed to
+ * empty the page -- which is what the default would do on a morning with
+ * nothing late and nothing running, and what either of them does the moment the
+ * last row it counts is checked off. An empty set is no filter at all, so the
+ * whole day comes back.
  *
- * Ephemeral view state, so it lives here in a ref and travels down as a prop
- * rather than into a store; the TYPE lives in its own module, since the card
- * needs it too.
+ * The conditions are the segments' OWN, so a readout on the page and the rows
+ * it leaves standing cannot disagree about whether it is holding anything.
  */
-const DEFAULT_SPOTLIGHT: Spotlight = 'both'
-
-const spotlight = ref<Spotlight | null>(DEFAULT_SPOTLIGHT)
-
-/**
- * What the cards are actually given.
- *
- * A spotlight lighting NOTHING would stand every row on the page down -- which
- * is what the default would do on a morning with nothing late and nothing
- * running, and what any of them does the moment the last counted row is checked
- * off. The readout that is holding the page must have something to hold.
- */
-const litSpotlight = computed<Spotlight | null>(() => {
-  const held = spotlight.value
-  if (!held) return null
-  const late = held !== 'now' && lateCount.value > 0
-  // `nowLit` is the readout's own condition, so the guard and the segment on
-  // the page cannot disagree about whether there is anything to hold.
-  const now = held !== 'late' && nowLit.value
-  return late || now ? held : null
+const litReadouts = computed<Set<Readout>>(() => {
+  const lit = new Set<Readout>()
+  if (held.value.has('late') && lateCount.value > 0) lit.add('late')
+  if (held.value.has('now') && nowLit.value) lit.add('now')
+  return lit
 })
 
-function toggleSpotlight(which: Spotlight) {
-  // From `both`, a tap narrows rather than releases: the readout was lit as one
-  // of two, and tapping it is a request to be shown only its own answer.
-  spotlight.value = spotlight.value === which ? null : which
-  // The same rule the other way: a readout counting rows a horizon filter is
+/**
+ * A plain switch: a tap holds the question it names, and a second tap lets it
+ * go. Both can be held at once -- they are different questions, and the day
+ * asks them both -- and holding neither is the whole day.
+ */
+function toggleReadout(which: Readout) {
+  const next = new Set(held.value)
+  if (!next.delete(which)) next.add(which)
+  held.value = next
+  // The two controls are ALTERNATIVES: a readout counting rows a horizon is
   // hiding is a readout lying about its own figure.
   horizon.value = null
 }
 
-/** Lit as itself, or as half of the pair the page opened on. */
-function isLit(which: Spotlight): boolean {
-  return litSpotlight.value === which || litSpotlight.value === 'both'
+/**
+ * The way out: both questions let go at once, which is the whole day back.
+ *
+ * It exists because releasing a held pair takes two taps, and the rail is the
+ * one place that can say in a word what the page would look like afterwards.
+ * The horizon needs no clearing here -- holding a readout already released it.
+ */
+function clearReadouts() {
+  held.value = new Set()
+}
+
+function isLit(which: Readout): boolean {
+  return litReadouts.value.has(which)
 }
 
 /**
- * The sets are computed against a date, so a spotlight left on from Monday
- * would be lighting a different answer. Back to the default rather than off:
- * the browsed day gets the same opening reading today did.
+ * Whether a row is one of the ones the held readouts COUNT, and so one of the
+ * ones that stays on the page while they are lit.
+ *
+ * It reads the same two sets the annunciators count themselves off. With both
+ * held the sets deliberately OVERLAP, which costs nothing here: a row is kept
+ * once.
+ */
+function counted(task: Task, lit: Set<Readout>): boolean {
+  if (lit.has('late') && turnCensus.value.late.has(task.id)) return true
+  return lit.has('now') && turnCensus.value.current.has(task.id)
+}
+
+/**
+ * The bands the racks actually draw, and the rows inside each unit.
+ *
+ * Two filters that never run together, since each control releases the other: a
+ * horizon keeps one band, and a lit readout keeps the rows it COUNTS. The second
+ * one takes units and whole bands with it -- a card holding nothing the readout
+ * counts has nothing to say, and an empty band is a rule and a ratio over a hole
+ * in the page.
+ *
+ * What it does NOT take is any READING: a unit is racked from the category's
+ * whole set and given the shown rows beside it, so the ratio in its head, its
+ * meter and its strike are the day's, exactly as the gauges and the band heads
+ * above them are. Narrowing those too would cost the figure its meaning the
+ * moment it is used -- checking a late row off drops it from the page, so a
+ * ratio counting only what is late would fall from `0/2` to `0/1` for work
+ * DONE, and the one meter that should have moved never would.
+ */
+const shownBands = computed(() => {
+  const lit = litReadouts.value
+  const shown = horizon.value
+    ? bands.value.filter((band) => band.frequency === horizon.value)
+    : bands.value
+
+  return shown
+    .map((band) => ({
+      ...band,
+      rack: buildCategoryRack(band.items, categoryStore.categories)
+        .map((unit) => ({
+          ...unit,
+          shown: lit.size ? unit.tasks.filter((task) => counted(task, lit)) : unit.tasks,
+        }))
+        .filter((unit) => unit.shown.length > 0),
+    }))
+    .filter((band) => band.rack.length > 0)
+})
+
+/**
+ * The sets are computed against a date, so readouts left held from Monday would
+ * be answering a different day. Back to the default rather than off: the
+ * browsed day gets the same opening reading today did.
  *
  * Keyed on the DAY, never on `referenceDate` itself: while nothing is pinned
  * that Date is the clock, and a watcher on it fired every sixty seconds --
- * which silently put the page's spotlight out a minute after any tap.
+ * which silently gave the whole page back a minute after any tap.
  */
 watch(dayKey, () => {
-  spotlight.value = DEFAULT_SPOTLIGHT
+  held.value = new Set(DEFAULT_READOUTS)
   horizon.value = null
 })
 
@@ -512,65 +588,73 @@ const eyebrow = computed(() =>
     </div>
 
     <!--
-      The master annunciator. A panel reports a fault twice -- once at the top,
-      where it is seen before anything is read, and once on the offending row.
-      This is the first half, and it is drawn in the app's own hatch, coarsened
-      from the meters' 3px scale pitch to a 6px hazard pitch so it reads as a
-      warning rather than as another gauge. Dropped entirely when nothing is
-      late: an annunciator that is always lit annunciates nothing.
+      THE FILTER RAIL. What was two banner-width annunciators is a bank of keys
+      in a recessed housing: the readouts are switches, and a control that spans
+      the column reads as a notice you cannot press.
+
+      Each key keeps the signal that says WHICH question it holds before its
+      label is read -- the fault's hazard hatch and its pinging lamp, the
+      running turn's caret, the same caret the rows wear in their gutter, so
+      every row carrying one is one of the N counted here. A panel reports a
+      fault twice: once up here, once on the offending row.
+
+      The keys are INDEPENDENT: each holds its own question, the page shows the
+      union of the ones held, and a second tap lets one go. `Tudo` is the way
+      out, and it is only on the rail while there is something to let go of.
     -->
-    <!--
-      The two readouts are ONE block, flush, sharing a seam: a panel with two
-      lamps rather than a stack of notices. Faults on top, what is live under it.
-    -->
-    <div v-if="lateCount || (runningTurn && nowCount)" class="annunciators">
-      <Transition name="annunciator">
+    <div
+      v-if="lateCount || (runningTurn && nowCount)"
+      class="filters"
+      role="group"
+      aria-label="Filtrar as tarefas do dia"
+    >
+      <span class="filters-legend" aria-hidden="true">Filtro</span>
+
+      <Transition name="key">
         <button
           v-if="lateCount"
           type="button"
-          class="annunciator"
+          class="key late"
           :class="{ on: isLit('late') }"
           :aria-pressed="isLit('late')"
-          :aria-label="`Destacar ${lateCount} ${lateCount === 1 ? 'tarefa atrasada' : 'tarefas atrasadas'}`"
-          @click="toggleSpotlight('late')"
+          :aria-label="`Mostrar ${lateCount} ${lateCount === 1 ? 'tarefa atrasada' : 'tarefas atrasadas'}`"
+          @click="toggleReadout('late')"
         >
-          <span class="annunciator-lamp" aria-hidden="true"></span>
-          <p class="annunciator-text">
-            <span class="annunciator-count figure">{{ lateCount }}</span>
-            {{ lateCount === 1 ? 'atrasada' : 'atrasadas' }}
-          </p>
+          <span class="key-lamp" aria-hidden="true"></span>
+          <span class="key-count figure">{{ lateCount }}</span>
+          <span class="key-label">{{ lateCount === 1 ? 'atrasada' : 'atrasadas' }}</span>
         </button>
       </Transition>
 
-      <!--
-        The running turn's own readout, under the fault and above the gauges:
-        the panel reports what is wrong first, then what is live. Its lamp is
-        the SAME caret the rows wear in their gutter, so the figure here and the
-        marks down the page are visibly one instrument -- every row carrying
-        that caret is one of the N counted here.
-
-        Both segments are BUTTONS: tapping one spotlights the rows it counts.
-      -->
-      <Transition name="annunciator">
+      <Transition name="key">
         <button
           v-if="runningTurn && nowCount"
           type="button"
-          class="turnbar"
+          class="key now"
           :class="{ on: isLit('now') }"
           :aria-pressed="isLit('now')"
-          :aria-label="`Destacar ${nowCount} ${nowCount === 1 ? 'tarefa' : 'tarefas'} para agora`"
-          @click="toggleSpotlight('now')"
+          :aria-label="`Mostrar ${nowCount} ${nowCount === 1 ? 'tarefa' : 'tarefas'} para agora`"
+          @click="toggleReadout('now')"
         >
-          <span class="turnbar-caret" aria-hidden="true"></span>
-          <p class="turnbar-text">
-            <span class="turnbar-count figure">{{ nowCount }}</span>
-            para agora
-          </p>
+          <span class="key-caret" aria-hidden="true"></span>
+          <span class="key-count figure">{{ nowCount }}</span>
+          <span class="key-label">para agora</span>
           <!-- Names the turn the count belongs to; the first thing to go when
-               the segment gets tight. -->
-          <span class="turnbar-note figure" aria-hidden="true">
-            {{ TURN_LABELS[runningTurn] }}
-          </span>
+               the rail gets tight. -->
+          <span class="key-note figure" aria-hidden="true">{{ TURN_LABELS[runningTurn] }}</span>
+        </button>
+      </Transition>
+
+      <Transition name="key">
+        <button
+          v-if="litReadouts.size"
+          type="button"
+          class="key all"
+          aria-label="Mostrar todas as tarefas do dia"
+          @click="clearReadouts"
+        >
+          <span class="key-cross" aria-hidden="true">&times;</span>
+          <span class="key-label">tudo</span>
         </button>
       </Transition>
     </div>
@@ -583,8 +667,8 @@ const eyebrow = computed(() =>
       scale counts CHECK-OFFS, so partial progress on a repeating task shows.
 
       Each gauge is a BUTTON, the same contract as the two annunciators above:
-      tapping one spotlights every row in the band it measures and stands the
-      other strata down. The meter and the stratum are one instrument.
+      tapping one keeps the band it measures and drops the other strata. The
+      meter and the stratum are one instrument.
     -->
     <!--
       Each gauge is also the way INTO its own horizon: tapping one narrows the
@@ -657,8 +741,8 @@ const eyebrow = computed(() =>
           :key="unit.key"
           :category="unit.category"
           :tasks="unit.tasks"
+          :shown="unit.shown"
           :index="index"
-          :spotlight="litSpotlight"
         />
       </div>
     </section>
@@ -792,75 +876,108 @@ const eyebrow = computed(() =>
 }
 
 /*
- * The annunciator. Alarm on alarm-dim, hatched at a 6/12px hazard pitch -- the
- * same 45-degree gradient every meter in the app draws, coarsened so the two
- * cannot be confused. The lamp pings rather than blinks: a hard flash on a page
- * you look at every morning is punishment, a slow pulse is a panel breathing.
- */
-/*
- * Two lamps in one housing, laid out the way the gauge cluster under it is: a
- * wrapping row of self-sizing segments. Stacked full-width bars read as a pile
- * of notices; side by side they read as a panel, and the page keeps its rhythm.
- */
-.annunciators {
-  @apply flex flex-wrap gap-2.5 mt-3 mb-2.5;
-}
-
-.annunciator {
-  @apply flex flex-1 basis-[160px] items-center gap-2.5 px-3 py-2 border rounded-sm
-         text-left cursor-pointer transition-[background-color,box-shadow] duration-200;
-  -webkit-tap-highlight-color: transparent;
-  color: var(--color-alarm);
-  border-color: var(--color-alarm);
-  background-color: var(--color-alarm-dim);
-  background-image: repeating-linear-gradient(
-    45deg,
-    transparent 0 6px,
-    color-mix(in srgb, var(--color-alarm) 13%, transparent) 6px 12px
-  );
-}
-
-.annunciator-lamp {
-  @apply w-2 h-2 shrink-0 rounded-full;
-  background: var(--color-alarm);
-  animation: annunciate 2.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
-}
-
-.annunciator-text {
-  @apply flex items-baseline gap-1.5 flex-1 min-w-0
-         font-mono text-[0.6875rem] font-medium uppercase tracking-[0.14em] truncate;
-  color: inherit;
-}
-
-/*
- * Set at the label's own SIZE, so the segment is one line of panel type rather
- * than a display figure with a caption under it, and bold so the figure is still
- * what the eye lands on. The weight does the work the size used to.
+ * THE FILTER RAIL. A recessed housing with a bank of keys in it, the way a
+ * console carries its switches -- which is what these are. They were two
+ * banner-width segments, and a control that spans the column reads as a notice:
+ * the width was the last thing still saying "annunciator" about a pair of
+ * buttons that filter the page.
  *
- * The label sits at `font-medium`, the weight every other mono micro-cap in the
- * app already uses: 600 against 700 is a subpixel at 11px, and these two labels
- * were the only ones wearing semibold anyway.
+ * What the keys kept is their SIGNAL, since that is what says which question a
+ * key holds before its label is read: the fault's hazard hatch and pinging
+ * lamp, the running turn's caret.
  */
-.annunciator-count {
+.filters {
+  @apply flex flex-wrap items-center gap-1.5 mt-3 mb-2.5 p-1.5 rounded-sm border border-line bg-well;
+  box-shadow: inset 0 1px 2px color-mix(in srgb, var(--color-void) 7%, transparent);
+}
+
+/* The etched legend, and the first thing to go when the rail gets tight: the
+   keys name themselves, and the word is the one thing on it that does not. It
+   holds back until the two keys and the way out have a row to share. */
+.filters-legend {
+  @apply hidden min-[480px]:inline shrink-0 pl-1 pr-0.5 font-mono text-[0.625rem] font-medium
+         uppercase tracking-[0.16em];
+  color: var(--color-fg-faint);
+}
+
+/*
+ * A key stands PROUD of the rail while it is up -- panel ground, a hairline,
+ * its own ink kept to the lamp -- and takes that ink whole while it is down.
+ * The same inversion the segments used, at the size of a control rather than
+ * the size of a banner.
+ */
+.key {
+  @apply inline-flex items-center gap-2 h-8 px-2.5 rounded-[3px] border cursor-pointer
+         font-mono text-[0.6875rem] font-medium uppercase tracking-[0.14em]
+         transition-[background-image,border-color,color,transform] duration-200;
+  -webkit-tap-highlight-color: transparent;
+  color: var(--color-fg-soft);
+  border-color: var(--color-line-strong);
+  background-image: linear-gradient(var(--color-panel), var(--color-panel));
+  box-shadow: var(--panel-shadow);
+}
+
+/* Key travel. A switch that does not move under the thumb is a picture of one. */
+.key:active {
+  transform: translateY(1px);
+}
+
+.key:focus-visible {
+  @apply outline-none;
+  box-shadow: 0 0 0 3px var(--color-accent-dim);
+}
+
+@media (hover: hover) {
+  .key.late:hover {
+    border-color: var(--color-alarm);
+    color: var(--color-alarm);
+  }
+
+  .key.now:hover {
+    border-color: var(--color-accent-text);
+    color: var(--color-accent-text);
+  }
+
+  .key.all:hover {
+    color: var(--color-fg);
+  }
+}
+
+/*
+ * Set at the label's own SIZE, bold rather than large: a key is one line of
+ * panel type, and a display figure with a caption under it competed with the
+ * gauge figures directly below for no gain. The label sits at `font-medium`,
+ * the weight every other mono micro-cap in the app uses.
+ */
+.key-count {
   @apply shrink-0 font-bold tracking-normal;
 }
 
-.turnbar-note {
-  @apply hidden min-[380px]:inline shrink-0 text-[0.625rem] uppercase tracking-[0.1em] opacity-70;
+.key-label {
+  @apply shrink-0;
 }
 
-/* Slides down from under the selector, the way a lamp lights rather than appears. */
-.annunciator-enter-active,
-.annunciator-leave-active {
-  transition:
-    opacity 260ms ease,
-    transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+/*
+ * The turn the count belongs to. It holds back until the rail has room for all
+ * three keys on ONE row, because the eyebrow at the top of the page already
+ * names the running turn and a second row of rail does not.
+ */
+.key-note {
+  @apply hidden min-[520px]:inline shrink-0 text-[0.625rem] tracking-[0.1em] opacity-70;
 }
 
-.annunciator-enter-from,
-.annunciator-leave-to {
-  @apply opacity-0;
-  transform: translateY(-6px);
+.key-lamp {
+  @apply w-2 h-2 shrink-0 rounded-full;
+  background: var(--color-alarm);
+}
+
+/*
+ * The lamp pings while the fault is NOT being looked at and holds steady once
+ * the key is down and the page is the answer to it. A hard flash on a page you
+ * open every morning is punishment; a slow pulse is a panel breathing.
+ */
+.key.late:not(.on) .key-lamp {
+  animation: annunciate 2.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
 }
 
 @keyframes annunciate {
@@ -875,33 +992,40 @@ const eyebrow = computed(() =>
   }
 }
 
-/*
- * The running turn's bar. Deliberately NOT hatched: the diagonal stripes are the
- * fault's own hazard signal, and a turn that is simply running is not a hazard.
- * A clean accent ground and the caret is what separates them by SHAPE, which is
- * the only thing that holds when the accent is a red the user picked.
- */
-.turnbar {
-  @apply flex flex-1 basis-[160px] items-center gap-2.5 px-3 py-2 border rounded-sm
-         text-left cursor-pointer transition-[background-color,box-shadow] duration-200;
-  -webkit-tap-highlight-color: transparent;
-  color: var(--color-accent-text);
-  border-color: var(--color-accent-text);
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--color-accent-text) 16%, transparent),
-    color-mix(in srgb, var(--color-accent-text) 5%, transparent)
-  );
+/* The row marker, at key scale. Same triangle, same meaning. */
+.key-caret {
+  @apply shrink-0;
+  width: 0;
+  height: 0;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 7px solid var(--color-accent-text);
 }
 
 /*
- * Held down: the segment inverts to a solid ground, so the control that is
- * holding the page says so as plainly as the page does.
+ * Down: the key takes its ink whole, so the control holding the page says so as
+ * plainly as the page does. It sits FLUSH while it is down -- the panel shadow
+ * goes -- which is the other half of the travel.
+ *
+ * The ground is painted as a flat one-stop GRADIENT rather than a
+ * `background-color`. On these controls `background-color: var(--color-...)`
+ * computes to transparent, while the SAME variable resolves normally for
+ * `color`, for `border-color`, and inside `color-mix()` or a gradient. The
+ * mechanism is not understood; it is not the reference chain, since
+ * `--color-alarm` is a plain hex and fails the same way. What is established is
+ * the symptom and the shape that works, both read off the rendered pixels in
+ * the harness rather than assumed.
  */
-.annunciator.on {
+.key.on {
   color: var(--color-void);
-  /* Hatch over a flat one-stop gradient -- see `.turnbar.on` for why the ground
-     is not a `background-color`. First layer listed paints on top. */
+  box-shadow: none;
+}
+
+.key.late.on {
+  border-color: var(--color-alarm);
+  /* The hazard hatch over the ground: the app's own 45-degree meter gradient
+     coarsened from a 3px scale pitch to a 6px hazard one, so a warning and a
+     scale cannot be confused. First layer listed paints on top. */
   background-image:
     repeating-linear-gradient(
       45deg,
@@ -911,64 +1035,63 @@ const eyebrow = computed(() =>
     linear-gradient(var(--color-alarm), var(--color-alarm));
 }
 
-.annunciator.on .annunciator-lamp {
+.key.late.on .key-lamp {
   background: var(--color-void);
 }
 
-.turnbar.on {
-  color: var(--color-void);
-  /*
-   * Painted as a flat one-stop GRADIENT rather than `background-color`.
-   *
-   * On these two segments `background-color: var(--color-...)` computes to
-   * transparent, while the SAME variable resolves normally for `color`, for
-   * `border-color`, and inside `color-mix()` or a gradient -- which is how the
-   * base rule below paints its wash and how the category strike draws its rule.
-   * The mechanism is not understood; it is not the reference chain, since
-   * `--color-alarm` is a plain hex and fails the same way on the sibling. What
-   * is established is the symptom and the shape that works, both read off the
-   * rendered pixels in the harness rather than assumed.
-   */
+/* NOT hatched: the stripes are the fault's own hazard signal, and a turn that
+   is simply running is not a hazard. The caret is what separates the two by
+   SHAPE, which is the only thing that holds when the accent is a red. */
+.key.now.on {
+  border-color: var(--color-accent-text);
   background-image: linear-gradient(var(--color-accent-text), var(--color-accent-text));
 }
 
-.turnbar.on .turnbar-caret {
+.key.now.on .key-caret {
   border-left-color: var(--color-void);
 }
 
-.annunciator.on .annunciator-lamp,
-.turnbar.on .turnbar-caret,
-.annunciator.on .annunciator-count,
-.turnbar.on .turnbar-count {
-  color: var(--color-void);
+/*
+ * The way out, and only on the rail while there is one -- a key that is always
+ * there to clear nothing is the annunciator that is always lit. Dashed and
+ * flat: the app's grammar for a gap where nothing is being asked, so it reads
+ * as the absence of a filter rather than as a third question.
+ */
+.key.all {
+  /* Pushed to the END of the rail: the two questions sit together on the left
+     and the way out is where a reset belongs, which also keeps it on the right
+     of the second row once a narrow rail wraps. */
+  @apply border-dashed ml-auto gap-1.5 px-2;
+  color: var(--color-fg-faint);
+  background-image: none;
+  box-shadow: none;
 }
 
-.annunciator:focus-visible,
-.turnbar:focus-visible {
-  @apply outline-none;
-  box-shadow: 0 0 0 3px var(--color-accent-dim);
+/*
+ * The cross is the whole key on a narrow rail: the word is what makes three
+ * keys wrap onto a second row, and a cross at the end of a filter is read
+ * everywhere. The `aria-label` carries the meaning either way.
+ */
+.key-cross {
+  @apply shrink-0 text-[0.8125rem] leading-none;
 }
 
-/* The row marker, at strip scale. Same triangle, same meaning. */
-.turnbar-caret {
-  @apply shrink-0;
-  width: 0;
-  height: 0;
-  border-top: 5px solid transparent;
-  border-bottom: 5px solid transparent;
-  border-left: 7px solid var(--color-accent-text);
+.key.all .key-label {
+  @apply hidden min-[420px]:inline;
 }
 
-.turnbar-text {
-  @apply flex items-baseline gap-1.5 flex-1 min-w-0
-         font-mono text-[0.6875rem] font-medium uppercase tracking-[0.14em] truncate;
-  /* A <p>, so the global paragraph colour would otherwise beat the pressed
-     ground's inverted ink and leave the label dark on dark. */
-  color: inherit;
+/* A key lights rather than appears: it slides out of the rail it belongs to. */
+.key-enter-active,
+.key-leave-active {
+  transition:
+    opacity 220ms ease,
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.turnbar-count {
-  @apply shrink-0 font-bold tracking-normal;
+.key-enter-from,
+.key-leave-to {
+  @apply opacity-0;
+  transform: translateY(-5px);
 }
 
 /*
@@ -994,7 +1117,8 @@ const eyebrow = computed(() =>
 }
 
 /* Stood down, not hidden: the way out of a filter must stay on screen and
-   legible, which is the spotlight's own rule one altitude up. */
+   legible, and the cluster is the only thing on the page that is exempt --
+   everything the two filters drop is dropped outright. */
 .gauge.stood {
   @apply opacity-45;
 }

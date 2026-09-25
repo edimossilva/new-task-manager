@@ -100,16 +100,61 @@ app.mount('#app')
  *
  * `?click=<selector>` then presses something once the page has settled.
  * Headless screenshots cannot click, and the states worth looking at most -- a
- * pressed readout, a spotlight, a form reached from a row -- only exist after one.
+ * pressed readout, a filtered page, a form reached from a row -- only exist after one.
+ *
+ * REPEAT the parameter to press several things in order, one render apart:
+ * `?click=.key.late&click=.key.now` is the only way to reach a state that takes
+ * two taps, such as a readout released and then held again. A comma would have
+ * been ambiguous -- a CSS selector may contain one -- so the parameter repeats
+ * instead.
  */
 const route = params.get('route')
 const settled = router.isReady().then(() => (route ? router.push(route) : undefined))
 
-const click = params.get('click')
-if (click) {
+const clicks = params.getAll('click')
+if (clicks.length) {
   settled.then(() => {
-    setTimeout(() => {
-      document.querySelector<HTMLElement>(click)?.click()
-    }, 400)
+    clicks.forEach((selector, index) => {
+      setTimeout(
+        () => {
+          document.querySelector<HTMLElement>(selector)?.click()
+        },
+        400 * (index + 1),
+      )
+    })
+  })
+}
+
+/*
+ * `?probe=<selector>&prop=color&prop=border-top-color` writes one element's
+ * computed values into the page TITLE, where `--dump-dom` reads them.
+ *
+ * The screenshot is the ground truth for what a rule PAINTS -- but a property a
+ * click just changed photographs at its OLD value under virtual time, and
+ * `--force-prefers-reduced-motion` does not always settle it. A stale pixel is
+ * indistinguishable from a rule that never applied, which is an hour spent
+ * chasing a bug that is not there. This is the other half of the answer: the
+ * pixels say what was painted, the probe says what the element computes.
+ * Disagreement between them means the artifact, not the CSS.
+ */
+const probe = params.get('probe')
+if (probe) {
+  const props = params.getAll('prop')
+  settled.then(() => {
+    setTimeout(
+      () => {
+        const element = document.querySelector(probe)
+        if (!element) {
+          document.title = `probe: no match for ${probe}`
+          return
+        }
+        const styles = getComputedStyle(element)
+        const read = props.length ? props : ['color', 'background-image', 'border-top-color']
+        document.title = `probe ${probe} ${read
+          .map((prop) => `${prop}=${styles.getPropertyValue(prop)}`)
+          .join(' | ')}`
+      },
+      400 * (clicks.length + 1) + 600,
+    )
   })
 }
