@@ -408,31 +408,45 @@ export class TaskUseCases {
   /**
    * The ISO week a check-off lands in, or null when it lands in none.
    *
-   * The MOMENT wins when the entry carries one, so the page answers "when was
-   * the work done" rather than "which period did it satisfy". The consequence is
-   * deliberate and has to be said out loud: catching up today on last week's
-   * task counts in TODAY's week, and the week that was short stays short.
+   * The KEY wins wherever it names a period the calendar can place: a daily key
+   * IS a day and a weekly key IS a week, so a check-off counts in the week whose
+   * work it did. Browsing back to yesterday and ticking the box there fills
+   * YESTERDAY -- the period the box belongs to, which is the same period every
+   * other reading in the app (the bands, the gauges, the run chart) credits it
+   * to. Placing it by the moment instead left the day it was done for empty and
+   * the day it was done ON over target, and across a Sunday it fell out of the
+   * browsed week altogether.
    *
-   * With no moment, the KEY's own shape is tested rather than the task's current
-   * frequency -- a frequency change leaves keys of the old format behind, and a
-   * daily key is still a day whatever the task has since become. A monthly,
-   * yearly or one-off key names no day and no week, so it places nowhere.
+   * The key's own SHAPE is tested rather than the task's current frequency -- a
+   * frequency change leaves keys of the old format behind, and a daily key is
+   * still a day whatever the task has since become.
+   *
+   * A monthly, yearly or one-off key names no week, so those fall back to the
+   * MOMENT the box was ticked, the only thing they carry that a week can be read
+   * from. With neither, the entry places nowhere.
    */
   private placeCompletion(completion: Completion): string | null {
-    if (completion.at) return isoWeekKey(completion.at)
-    if (matchesFrequency('weekly', completion.key)) return completion.key
     const day = parseDailyKey(completion.key)
-    return day ? isoWeekKey(day) : null
+    if (day) return isoWeekKey(day)
+    if (matchesFrequency('weekly', completion.key)) return completion.key
+    return completion.at ? isoWeekKey(completion.at) : null
   }
 
   /**
-   * The day a check-off happened on, or null when nothing says.
+   * The day a check-off belongs to inside the week it was placed in, or null
+   * when nothing pins it to one.
    *
    * The same order as `placeCompletion`, one resolution finer: a weekday strip
-   * can only show what pins to a day, and a weekly key names seven of them.
+   * can only show what pins to a day, and a weekly key names seven of them. The
+   * moment can pin one, but only while it falls inside `week` -- a weekly task
+   * caught up the following Tuesday belongs to its own week, and charging it to
+   * that week's Tuesday would draw work on a day it was neither done nor due.
    */
-  private completionDay(completion: Completion): Date | null {
-    return completion.at ?? parseDailyKey(completion.key)
+  private completionDay(completion: Completion, week: string): Date | null {
+    const day = parseDailyKey(completion.key)
+    if (day) return day
+    if (completion.at && isoWeekKey(completion.at) === week) return completion.at
+    return null
   }
 
   /**
@@ -577,7 +591,7 @@ export class TaskUseCases {
         row.done += 1
         counts.set(completion.key, (counts.get(completion.key) ?? 0) + 1)
 
-        const day = this.completionDay(completion)
+        const day = this.completionDay(completion, key)
         if (day) row.byWeekday[isoWeekday(day) - 1]! += 1
         else row.undated += 1
       }
@@ -673,7 +687,7 @@ export class TaskUseCases {
       for (const completion of task.completions) {
         if (this.placeCompletion(completion) !== key) continue
         placed += 1
-        const day = this.completionDay(completion)
+        const day = this.completionDay(completion, key)
         if (day) done[isoWeekday(day) - 1]! += 1
         else undated += 1
       }
@@ -985,9 +999,12 @@ export class TaskUseCases {
         byHour[hour] = (byHour[hour] ?? 0) + 1
         if (!lastAt || completion.at > lastAt) lastAt = completion.at
       }
-      // A weekday is the coarser question, so a dateless daily key can still
-      // answer it -- the same fallback order `placeCompletion` uses.
-      const day = this.completionDay(completion)
+      // The rhythm asks WHEN the work happens, so here the MOMENT wins and the
+      // daily key is only the fallback -- the opposite order to
+      // `completionDay`, which asks which period the check-off belongs to. The
+      // dial beside these bars can read nothing but `at`, and a weekday bar
+      // built from the period would disagree with the hour drawn next to it.
+      const day = completion.at ?? parseDailyKey(completion.key)
       if (day) {
         const weekday = isoWeekday(day) - 1
         byWeekday[weekday] = (byWeekday[weekday] ?? 0) + 1

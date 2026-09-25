@@ -230,8 +230,10 @@ layers.
       permanently pale, and an empty cell keeps a `well` ground under the hatch so the season
       reads as a grid of days rather than as marks scattered on nothing.
     - `TaskRhythm` -- WHEN the work happens, which the periods cannot say: seven weekday bars
-      (anything that pins to a day, `at` first and the daily key as the fallback, the same order
-      `placeCompletion` uses) beside a 24-hour polar dial (only entries carrying an `at` can
+      (anything that pins to a day, `at` first and the daily key as the fallback -- the OPPOSITE
+      order to `completionDay`, which asks which period a check-off belongs to, because the dial
+      beside these bars can read nothing but `at` and the two must tell one story)
+      beside a 24-hour polar dial (only entries carrying an `at` can
       answer). All twenty-four spokes are drawn, the empty ones as stubs: a dial missing half its
       spokes reads as a broken instrument. The peak hour takes the user's accent and sits in the
       hub as a figure.
@@ -269,17 +271,24 @@ layers.
   week. `TaskUseCases.weekSummary(tasks, referenceDate)` and `weekTrend(...)` take their tasks as an
   argument for the same reason `checkTally` does -- the view holds that reactive array, and a method
   reading the repository would not re-run when a check-off is written.
-  - **A check-off lands in a week by its `at` MOMENT**, falling back to the key's own SHAPE when
-    there is none (`daily` -> its week, `weekly` -> itself). The shape, never `task.frequency`: a
+  - **A check-off lands in the week its own PERIOD belongs to** (`placeCompletion`), read off the
+    key's own SHAPE (`daily` -> its week, `weekly` -> itself) and never off `task.frequency`: a
     frequency change leaves old keys behind, and a daily key is still a day whatever the task
-    became. A legacy `monthly`/`yearly`/`once` key has neither a moment nor a day, so it lands
-    nowhere -- counted in `unplaced` and shown as a footnote, because silently losing work the user
-    did is the one thing the page must not do.
-    - The consequence is deliberate and is stated on the page: it answers "when did I do the work",
-      not "which period did it satisfy". Catching up today on last week's task counts in THIS week,
-      and the week that was short stays short. It is also why the page is READ-ONLY -- ticking
-      something off from here while browsing a past week would move a different bar than the one on
-      screen. `placeCompletion` is the single place to invert this.
+    became. So the page answers **"which period did it satisfy"**, the same question the bands,
+    the gauges and the run chart answer -- browsing back to yesterday and ticking the box fills
+    YESTERDAY. Placing by the moment instead was a bug the page could not survive: the day the
+    work was FOR read short while the day it was ticked on read over target, and a Sunday caught
+    up on Monday left the week it belonged to entirely.
+    - A legacy `monthly`/`yearly`/`once` key names no week, so those fall back to the **moment**,
+      the only thing they carry a week can be read from. With neither, the entry lands nowhere --
+      counted in `unplaced` and shown as a footnote, because silently losing work the user did is
+      the one thing the page must not do.
+    - `completionDay` is the same order one resolution finer, and the two must agree or a check-off
+      would be counted in one week and drawn on another week's column. A moment pins a dayless key
+      to a day only while it falls INSIDE the placed week; a weekly task caught up the following
+      Tuesday is `undated` in its own week rather than drawn on a day it was neither done nor due.
+    - The page stays READ-ONLY regardless: ticking something off from here would move a bar while
+      browsing a past week, and the unit on screen is a week where a check-off is a day's.
   - **Only `daily` and `weekly` tasks are expected of a week.** A monthly or yearly target belongs
     to a month or a year; a seventh of it is a number nobody chose, and it would differ between a
     four- and a five-week month. Those check-offs are reported as `extras`, never folded into the
@@ -551,9 +560,12 @@ layers.
     over the SAME seven days.
     - Why one axis for two cadences: a daily task and a weekly one are asked for on different
       horizons, and a single line counting both against one demand is two readings in one
-      stroke. But WHEN the work happened is a question both can answer, and answering it on one
-      axis is what lets the two curves be read against each other -- a week where the dailies
-      held and the weeklies slipped is visible at a glance, which no single mixed line shows.
+      stroke. But WHICH DAY the work belongs to is a question both can answer, and answering it
+      on one axis is what lets the two curves be read against each other -- a week where the
+      dailies held and the weeklies slipped is visible at a glance, which no single mixed line
+      shows. A column is the day the check-off was FOR, never the day it was ticked on
+      (`completionDay`): the shelf it is drawn against is that day's own demand, and measuring a
+      catch-up against the wrong day's target fails the column twice over.
     - **Two modes, one component.** `period` gives each column its own figure against its own
       shelf, which is what a daily task wants: its period IS the day. `cumulative` turns the
       columns into a RUN -- `done` and `expected` are totals through that day -- which is the
