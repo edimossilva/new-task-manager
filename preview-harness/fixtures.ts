@@ -62,6 +62,9 @@ export const categories: Category[] = [
   category('c1', 'Saude', 'teal'),
   category('c2', 'Casa', 'ochre'),
   category('c3', 'Estudo', 'ultra'),
+  // Its own card so the nesting is legible beside the flat ones, rather than
+  // landing inside a card that is already showing every other row state.
+  category('c4', 'Rotina', 'rose'),
 ]
 
 export const tasks: Task[] = [
@@ -86,7 +89,11 @@ export const tasks: Task[] = [
   task({ title: 'Tomar remedio', categoryId: 'c1', turns: [1], timesPerPeriod: 1 }),
   task({ title: 'Caminhada', categoryId: 'c1', turns: [2], timesPerPeriod: 1 }),
   task({ title: 'Ler 20 paginas', categoryId: 'c1', turns: [3], timesPerPeriod: 1 }),
-  task({ title: 'Alongamento', categoryId: 'c1', timesPerPeriod: 1 }),
+  // The one ORDINARY task with a stable id. Every other plain case gets a fresh
+  // `crypto.randomUUID()` per page load, so `/tasks/:id` and `/tasks/:id/edit`
+  // -- routes the harness serves -- could only be reached by clicking through,
+  // and never for a task that is neither a container nor a step.
+  task({ id: 't1', title: 'Alongamento', categoryId: 'c1', timesPerPeriod: 1 }),
   task({ title: 'Corrida', categoryId: 'c1', timesPerPeriod: 1, active: false }),
 
   // Casa -- a category with nothing left, so its name rules through.
@@ -163,6 +170,81 @@ export const tasks: Task[] = [
     frequency: 'once',
     timesPerPeriod: 1,
     completions: settled(2),
+  }),
+
+  // Rotina -- a container and its steps. The container is a HEADING: it counts
+  // for nothing, carries no stamp and no gauge, and its ratio is its steps'.
+  // The band's own gauge must therefore ask for 5 check-offs here (1 + 1 + 3),
+  // never 6, and the card's head must read 5 too.
+  task({ id: 'p1', title: 'Rotina matinal', categoryId: 'c4', timesPerPeriod: 1 }),
+  // Kept, so the step is struck and its turn chip rules through.
+  task({
+    id: 'p1a',
+    title: 'Alongar',
+    categoryId: 'c4',
+    parentId: 'p1',
+    turns: [1],
+    timesPerPeriod: 1,
+    completions: checks(1),
+  }),
+  // Missed its morning: an Atrasada step under a heading, which is what proves
+  // the group rises as a unit rather than sinking under its kept sibling.
+  task({
+    id: 'p1b',
+    title: 'Tomar vitamina',
+    categoryId: 'c4',
+    parentId: 'p1',
+    turns: [1],
+    timesPerPeriod: 1,
+  }),
+  // A repeat part done, so the heading's ratio is a fraction rather than a
+  // count of whole steps.
+  task({
+    id: 'p1c',
+    title: 'Respirar fundo',
+    categoryId: 'c4',
+    parentId: 'p1',
+    timesPerPeriod: 3,
+    completions: checks(1),
+  }),
+  // A step OUT of the routine: it leaves Hoje while the heading stays, which is
+  // the case the "a heading needs a shown step" rule is measured against.
+  task({
+    id: 'p1d',
+    title: 'Pesar-se',
+    categoryId: 'c4',
+    parentId: 'p1',
+    timesPerPeriod: 1,
+    active: false,
+  }),
+  // A WEEKLY container, for the inherited weekday: both rows appear from Quinta
+  // on and neither before it.
+  task({
+    id: 'p2',
+    title: 'Revisao semanal',
+    categoryId: 'c3',
+    frequency: 'weekly',
+    weekday: 4,
+    timesPerPeriod: 1,
+  }),
+  task({
+    id: 'p2a',
+    title: 'Fechar pendencias',
+    categoryId: 'c3',
+    parentId: 'p2',
+    frequency: 'weekly',
+    weekday: 4,
+    timesPerPeriod: 1,
+    completions: [...pastWeek(2, 1), ...pastWeek(1, 1)],
+  }),
+  task({
+    id: 'p2b',
+    title: 'Planejar a semana',
+    categoryId: 'c3',
+    parentId: 'p2',
+    frequency: 'weekly',
+    weekday: 4,
+    timesPerPeriod: 1,
   }),
 
   // Unfiled -- the bucket has no ink, and settles like any other card.

@@ -33,6 +33,7 @@ const taskRepo: TaskRepository = {
   delete: (id) => remove(tasks, id),
   getByFrequency: (frequency: TaskFrequency) => tasks.filter((t) => t.frequency === frequency),
   getByCategoryId: (categoryId: string) => tasks.filter((t) => t.categoryId === categoryId),
+  getByParentId: (parentId: string) => tasks.filter((t) => t.parentId === parentId),
 }
 
 const categoryRepo: CategoryRepository = {

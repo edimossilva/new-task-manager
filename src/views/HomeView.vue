@@ -9,6 +9,8 @@ import {
   addWeeks,
   formatDate,
   formatWeekRange,
+  isSubtask,
+  parentIds,
   parseDailyKey,
   periodKey,
   turnOf,
@@ -43,12 +45,60 @@ function isCompleted(task: Task): boolean {
   return store.isCompletedFor(task, referenceDate.value)
 }
 
-// Only ACTIVE tasks actually due on the browsed date: ones created later never
-// had a chance to be done, a weekly task pinned to a weekday has not come up
-// yet, and an inactive one is not part of the routine at all.
-const visibleTasks = computed(() =>
-  store.tasks.filter((task) => task.active && store.isDueOn(task, referenceDate.value)),
-)
+/*
+ * What a task IS -- a container of steps, a step, or neither -- read off the
+ * WHOLE set rather than the day's. A routine does not stop being a routine
+ * because today's browsing hid one of its steps.
+ */
+const byId = computed(() => new Map(store.tasks.map((task) => [task.id, task])))
+const parents = computed(() => parentIds(store.tasks))
+
+/** Holds steps, and so is a heading rather than work. Counts as nothing. */
+function isContainer(task: Task): boolean {
+  return parents.value.has(task.id)
+}
+
+/** The task this one is a step of, if it is a step and that task still exists. */
+function parentOf(task: Task): Task | undefined {
+  return isSubtask(task, parents.value) && task.parentId ? byId.value.get(task.parentId) : undefined
+}
+
+/** The head of a task's group: its container, or itself. */
+function groupHead(task: Task): Task {
+  return parentOf(task) ?? task
+}
+
+/**
+ * Only ACTIVE tasks actually due on the browsed date: ones created later never
+ * had a chance to be done, a weekly task pinned to a weekday has not come up
+ * yet, and an inactive one is not part of the routine at all.
+ *
+ * Two more gates once tasks can hold steps, and the second is load-bearing well
+ * past the look of the page. A heading with nothing under it is a rule over a
+ * hole, the rule that already drops an empty band -- but dropping it here is
+ * also what CLOSES the set: every array built below holds a container only
+ * alongside at least one of its steps, which is the condition `parentIds` is
+ * computed under everywhere downstream.
+ */
+const visibleTasks = computed(() => {
+  const due = store.tasks.filter((task) => task.active && store.isDueOn(task, referenceDate.value))
+
+  // A step whose container is out of the routine goes with it. Derived rather
+  // than written onto the step, so switching the container back on restores
+  // exactly the steps that were left on rather than all of them.
+  const live = due.filter((task) => {
+    const parent = parentOf(task)
+    return !parent || parent.active
+  })
+
+  const held = new Set<string>()
+  for (const task of live) {
+    const parent = parentOf(task)
+    if (parent) held.add(parent.id)
+  }
+
+  return live.filter((task) => !isContainer(task) || held.has(task.id))
+})
 
 /**
  * What the clock says about each task, resolved ONCE per render. Both questions
@@ -66,6 +116,9 @@ const turnCensus = computed(() => {
   const current = new Set<string>()
 
   for (const task of visibleTasks.value) {
+    // A container has no check-offs, so the clock makes no claim on it: its
+    // steps carry the deadlines, and counting both would count the group twice.
+    if (isContainer(task)) continue
     if (store.isLateOn(task, referenceDate.value, today.value)) late.add(task.id)
     // The two sets deliberately OVERLAP. A task whose morning was missed and
     // whose afternoon is running is honestly in both -- 'what did I miss' and
@@ -99,15 +152,53 @@ function statusRank(task: Task): number {
 }
 
 /**
+ * The rank a whole GROUP sorts at: the worst state anything inside it is in.
+ *
+ * A routine with one missed step has to rise as a unit -- sinking it under its
+ * own kept steps would hide the miss behind the work that went right. A
+ * container contributes nothing of its own (it is always `3`, the floor), so
+ * the figure is its steps'; a task standing alone is a group of one and reads
+ * exactly as it did before.
+ */
+const groupRanks = computed(() => {
+  const ranks = new Map<string, number>()
+  for (const task of visibleTasks.value) {
+    const head = groupHead(task).id
+    const rank = isContainer(task) ? 3 : statusRank(task)
+    ranks.set(head, Math.min(ranks.get(head) ?? 3, rank))
+  }
+  return ranks
+})
+
+/**
  * A card holds its whole category within its band, so the sort carries what the
  * Pendentes / Concluidas split used to say: what needs attention rises, what is
  * done sinks under it. No frequency term -- a band is one frequency.
+ *
+ * It sorts by the GROUP first, which is what puts a step immediately after the
+ * task it belongs to. That adjacency is the whole reason `buildCategoryRack`
+ * needs no notion of nesting: it appends in the order it is given, so the rack
+ * unit receives the groups already assembled and only has to notice the runs.
+ * The head's id breaks a tie between two groups sharing a title, so they cannot
+ * interleave.
  */
-const sortedTasks = computed(() =>
-  [...visibleTasks.value].sort(
-    (a, b) => statusRank(a) - statusRank(b) || a.title.localeCompare(b.title),
-  ),
-)
+const sortedTasks = computed(() => {
+  const ranks = groupRanks.value
+
+  return [...visibleTasks.value].sort((a, b) => {
+    const headA = groupHead(a)
+    const headB = groupHead(b)
+
+    return (
+      (ranks.get(headA.id) ?? 3) - (ranks.get(headB.id) ?? 3) ||
+      headA.title.localeCompare(headB.title) ||
+      headA.id.localeCompare(headB.id) ||
+      Number(headA !== a) - Number(headB !== b) ||
+      statusRank(a) - statusRank(b) ||
+      a.title.localeCompare(b.title)
+    )
+  })
+})
 
 /**
  * One band per frequency, `FREQUENCIES` order: Diaria on top, Anual at the
@@ -118,6 +209,10 @@ const sortedTasks = computed(() =>
 const bands = computed(() =>
   FREQUENCIES.map((frequency) => {
     const tasks = sortedTasks.value.filter((task) => task.frequency === frequency)
+    // Every WHOLE-TASK figure below counts the work, never the headings over
+    // it: a routine of three steps is three tasks on this page, not four.
+    // `checkTally` makes the same exclusion for itself.
+    const rows = tasks.filter((task) => !isContainer(task))
     // The reading is check-level: a task wanting eight check-offs is eight
     // notches on the scale, so the third one moves the needle instead of the
     // band sitting at zero until the whole task lands. At timesPerPeriod 1 this
@@ -131,11 +226,11 @@ const bands = computed(() =>
       percent: percentOf(checks),
       // Whole tasks, the other reading: eight of eight checks on one task and
       // one of eight on eight tasks are the same percentage and not the same day.
-      tasks: { done: tasks.filter(isCompleted).length, total: tasks.length },
-      hasRepeats: tasks.some((task) => task.timesPerPeriod > 1),
+      tasks: { done: rows.filter(isCompleted).length, total: rows.length },
+      hasRepeats: rows.some((task) => task.timesPerPeriod > 1),
       // Which horizon is actually in trouble: a count in the band head says it
       // where the gauge above can only say how much is left.
-      late: tasks.filter((task) => turnCensus.value.late.has(task.id)).length,
+      late: rows.filter((task) => turnCensus.value.late.has(task.id)).length,
       // The rule takes the frequency's own ink, then burns off.
       ink: { '--band-ink': `var(--color-freq-${frequency})` },
       // The rows themselves, for `shownBands` to rack up. The rack is built
@@ -186,7 +281,9 @@ const previousWeekly = computed(() => store.weekdayLoad(store.tasks, lastMonday.
 
 const weekRange = computed(() => formatWeekRange(monday.value))
 
-const weeklyTasks = computed(() => store.tasks.filter((task) => task.frequency === 'weekly'))
+const weeklyTasks = computed(() =>
+  store.tasks.filter((task) => task.frequency === 'weekly' && !isContainer(task)),
+)
 
 /**
  * The seven days of the browsed week, as a curve draws them.
@@ -394,6 +491,25 @@ function counted(task: Task, lit: Set<Readout>): boolean {
 }
 
 /**
+ * The rows a lit readout leaves standing, headings included.
+ *
+ * A container is never one of the rows a readout COUNTS -- it carries no
+ * deadline of its own -- so it comes back whenever a step under it survives.
+ * Without that the steps would be drawn indented under nothing, and a group
+ * would lose the one row that says what it is. Filtering the original array
+ * rather than rebuilding it keeps the order the sort established.
+ */
+function keepCounted(tasks: Task[], lit: Set<Readout>): Task[] {
+  const heads = new Set<string>()
+  for (const task of tasks) {
+    if (!counted(task, lit)) continue
+    const parent = parentOf(task)
+    if (parent) heads.add(parent.id)
+  }
+  return tasks.filter((task) => counted(task, lit) || heads.has(task.id))
+}
+
+/**
  * The bands the racks actually draw, and the rows inside each unit.
  *
  * Two filters that never run together, since each control releases the other: a
@@ -422,7 +538,7 @@ const shownBands = computed(() => {
       rack: buildCategoryRack(band.items, categoryStore.categories)
         .map((unit) => ({
           ...unit,
-          shown: lit.size ? unit.tasks.filter((task) => counted(task, lit)) : unit.tasks,
+          shown: lit.size ? keepCounted(unit.tasks, lit) : unit.tasks,
         }))
         .filter((unit) => unit.shown.length > 0),
     }))

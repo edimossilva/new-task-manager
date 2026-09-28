@@ -2,7 +2,15 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import type { Category, Task } from '@/entities'
-import { FREQUENCY_LABELS, FREQUENCY_ORDER, INKS, formatDateTime, turnPlan } from '@/entities'
+import {
+  FREQUENCY_LABELS,
+  FREQUENCY_ORDER,
+  INKS,
+  formatDateTime,
+  isSubtask,
+  parentIds,
+  turnPlan,
+} from '@/entities'
 import type { PeriodPoint, TaskInsight } from '@/usecases'
 import { percentOf } from '@/usecases'
 import { useTaskStore } from '@/stores/task-store'
@@ -53,7 +61,26 @@ const tasks = computed(() =>
   category.value ? store.tasks.filter((task) => task.categoryId === category.value!.id) : [],
 )
 
-const activeTasks = computed(() => tasks.value.filter((task) => task.active))
+const parents = computed(() => parentIds(store.tasks))
+
+/**
+ * The tasks this page actually COUNTS: the work, never the headings over it.
+ *
+ * `tasks` stays whole below, because `weekSummary` and `weekTrend` make the
+ * same exclusion at the source and still need a container's own history to land
+ * in their `extras`. Everything on this page that is a per-task fold reads this
+ * instead -- a routine of three steps is three tasks in this category, not
+ * four, and a container with no check-offs of its own would otherwise drag the
+ * pooled adherence down by every period since it was created.
+ */
+const countable = computed(() => tasks.value.filter((task) => !parents.value.has(task.id)))
+
+const activeTasks = computed(() => countable.value.filter((task) => task.active))
+
+/** The task a step is filed under, for the eyebrow on its roll row. */
+function parentOf(task: Task): Task | undefined {
+  return isSubtask(task, parents.value) && task.parentId ? store.getById(task.parentId) : undefined
+}
 
 /**
  * One reading per task, the same one its own page opens with.
@@ -63,7 +90,7 @@ const activeTasks = computed(() => tasks.value.filter((task) => task.active))
  * keeping". Everything below is a fold of these rows.
  */
 const insights = computed<{ task: Task; insight: TaskInsight }[]>(() =>
-  tasks.value.map((task) => ({ task, insight: store.taskInsight(task) })),
+  countable.value.map((task) => ({ task, insight: store.taskInsight(task) })),
 )
 
 /**
@@ -155,7 +182,7 @@ const horizons = computed(() =>
     .map((band) => ({
       ...band,
       label: FREQUENCY_LABELS[band.frequency],
-      count: tasks.value.filter((task) => task.frequency === band.frequency).length,
+      count: countable.value.filter((task) => task.frequency === band.frequency).length,
       percent: percentOf({ done: band.credited, total: band.expected }),
       ink: { '--band-ink': `var(--color-freq-${band.frequency})` },
     }))
@@ -217,9 +244,9 @@ function sinceLabel(insight: TaskInsight): string {
         <p class="tile-label">Tarefas</p>
         <p class="tile-figure">{{ activeTasks.length }}</p>
         <p class="tile-sub figure">
-          <template v-if="activeTasks.length === tasks.length">todas ativas</template>
+          <template v-if="activeTasks.length === countable.length">todas ativas</template>
           <template v-else
-            >de {{ tasks.length }}, {{ tasks.length - activeTasks.length }} fora</template
+            >de {{ countable.length }}, {{ countable.length - activeTasks.length }} fora</template
           >
         </p>
       </article>
@@ -269,7 +296,7 @@ function sinceLabel(insight: TaskInsight): string {
       <section class="sheet block">
         <div class="block-head">
           <h2 class="block-title">Horizontes</h2>
-          <span class="block-figure figure">{{ tasks.length }} tarefas</span>
+          <span class="block-figure figure">{{ countable.length }} tarefas</span>
         </div>
         <ul class="lines">
           <li v-for="band in horizons" :key="band.frequency" class="line" :style="band.ink">
@@ -307,6 +334,10 @@ function sinceLabel(insight: TaskInsight): string {
           :class="{ off: !row.task.active }"
         >
           <div class="min-w-0 flex-1">
+            <!-- The roll is sorted worst-first, so a step lands nowhere near
+                 the routine it belongs to. It says which one in a word rather
+                 than giving up the order that makes the page worth reading. -->
+            <p v-if="parentOf(row.task)" class="roll-kin">{{ parentOf(row.task)!.title }}</p>
             <div class="roll-head">
               <RouterLink :to="`/tasks/${row.task.id}`" class="roll-link">
                 {{ row.task.title }}
@@ -520,6 +551,12 @@ function sinceLabel(insight: TaskInsight): string {
 
 .count {
   @apply shrink-0 font-mono text-[0.625rem] uppercase tracking-[0.1em] text-fg-faint;
+}
+
+/* What the step belongs to, over its own name: an eyebrow, the shape this app
+   already uses for the line that places a title. */
+.roll-kin {
+  @apply text-[0.6875rem] uppercase tracking-wide text-fg-faint;
 }
 
 .roll-row {

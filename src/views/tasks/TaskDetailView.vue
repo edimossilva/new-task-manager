@@ -9,6 +9,8 @@ import {
   formatDate,
   formatDateTime,
   formatPeriodLabel,
+  isSubtask,
+  parentIds,
   periodKey,
   turnPlan,
   turnSlots,
@@ -109,8 +111,54 @@ const visibleHistory = computed(() =>
   showAllPeriods.value ? history.value : history.value.slice(0, LOG_PAGE),
 )
 
-/** A one-off has a single period, and it is the current one: no cadence to read. */
-const hasCadence = computed(() => task.value !== undefined && task.value.frequency !== 'once')
+const parents = computed(() => parentIds(store.tasks))
+
+/** Holds steps, so it is a container: no check-offs, and no reading of its own. */
+const isContainer = computed(() => Boolean(task.value && parents.value.has(task.value.id)))
+
+/** The task this one is a step of, for the line in the plate that says so. */
+const parentTask = computed(() =>
+  task.value && isSubtask(task.value, parents.value) && task.value.parentId
+    ? store.getById(task.value.parentId)
+    : undefined,
+)
+
+/**
+ * The steps filed under this task, WORST KEPT FIRST -- the roll a category's
+ * page gives its tasks, one altitude down. A container's reading IS its steps',
+ * so on such a page this replaces the tiles and the charts entirely.
+ */
+const steps = computed(() => {
+  const held = task.value
+  if (!held) return []
+
+  return store.tasks
+    .filter((step) => step.parentId === held.id && isSubtask(step, parents.value))
+    .map((step) => ({ task: step, insight: store.taskInsight(step) }))
+    .sort(
+      (a, b) =>
+        Number(a.task.active === false) - Number(b.task.active === false) ||
+        a.insight.rate - b.insight.rate ||
+        a.task.title.localeCompare(b.task.title),
+    )
+})
+
+/**
+ * A one-off has a single period, and it is the current one: no cadence to read.
+ * A container has no period of its own at all, for the stronger reason that it
+ * has no check-offs -- `taskInsight` would read `0%` kept over every period
+ * since it was created, which is a claim of failure rather than an absence.
+ */
+const hasCadence = computed(
+  () => task.value !== undefined && task.value.frequency !== 'once' && !isContainer.value,
+)
+
+/**
+ * A task that collected check-offs BEFORE steps were filed under it keeps them,
+ * and the log is the one place they are still readable -- nothing in this app
+ * destroys history, it only stops counting it.
+ */
+const showHistory = computed(() => !isContainer.value || (task.value?.completions.length ?? 0) > 0)
 
 /** The noun a figure counting THIS task's periods wears. */
 function periods(value: number): string {
@@ -198,6 +246,9 @@ function toggleActive() {
           <span v-if="!task.active" class="chip off">Inativa</span>
           <span v-else-if="isLate" class="chip late">Atrasada</span>
           <CategoryBadge v-if="category" :category="category" />
+          <RouterLink v-if="parentTask" :to="`/tasks/${parentTask.id}`" class="chip">
+            Subtarefa de {{ parentTask.title }}
+          </RouterLink>
           <FrequencyBadge :frequency="task.frequency" />
           <WeekdayBadge v-if="task.weekday" :weekday="task.weekday" />
           <TurnBadge
@@ -209,7 +260,7 @@ function toggleActive() {
             :late="lateTurnSet.has(group.turn)"
             :current="currentTurnSet.has(group.turn)"
           />
-          <span v-if="task.timesPerPeriod > 1" class="chip figure">
+          <span v-if="!isContainer && task.timesPerPeriod > 1" class="chip figure">
             {{ TIMES_PER_PERIOD_LABELS[task.frequency].toLowerCase() }}: {{ task.timesPerPeriod }}
           </span>
         </div>
@@ -217,8 +268,9 @@ function toggleActive() {
         <p v-if="task.description" class="desc">{{ task.description }}</p>
 
         <!-- The current period, tickable from here: reading the history and
-             finishing the period are the same visit often enough. -->
-        <div class="now">
+             finishing the period are the same visit often enough. A container
+             is concluded by its steps, so it carries no control at all. -->
+        <div v-if="!isContainer" class="now">
           <TaskStamp
             :task="task"
             :count="count"
@@ -252,7 +304,44 @@ function toggleActive() {
       keeping it, how well have I kept it, how much is there, and when did I
       last touch it.
     -->
-    <section class="cluster" aria-label="Indicadores">
+    <!--
+      A container has no cadence reading of its own, so its body is the roll of
+      what it holds -- the same worst-first order a category's page uses, and
+      for the same question: which of these am I actually keeping.
+    -->
+    <section v-if="isContainer" class="sheet block">
+      <div class="block-head">
+        <h2 class="block-title">Subtarefas</h2>
+        <span class="block-figure figure">{{ steps.length }}</span>
+      </div>
+
+      <p v-if="steps.length === 0" class="section-empty">Nenhuma subtarefa ainda.</p>
+
+      <ul v-else class="roll">
+        <li
+          v-for="row in steps"
+          :key="row.task.id"
+          class="roll-row"
+          :class="{ off: !row.task.active }"
+        >
+          <RouterLink :to="`/tasks/${row.task.id}`" class="roll-title">
+            {{ row.task.title }}
+          </RouterLink>
+          <span v-if="!row.task.active" class="chip off">Inativa</span>
+          <span class="roll-seq figure">seq {{ row.insight.streak }}</span>
+          <div class="roll-meter" :aria-hidden="true">
+            <div class="roll-fill" :style="{ width: `${row.insight.rate}%` }"></div>
+          </div>
+          <span class="roll-rate figure">{{ row.insight.rate }}%</span>
+        </li>
+      </ul>
+
+      <RouterLink :to="`/tasks/new?parent=${task.id}`" class="btn btn-secondary mt-3">
+        Nova subtarefa
+      </RouterLink>
+    </section>
+
+    <section v-if="!isContainer" class="cluster" aria-label="Indicadores">
       <article v-if="hasCadence" class="tile" :style="{ '--i': 0 }">
         <p class="tile-label">Sequencia</p>
         <p class="tile-figure">
@@ -310,7 +399,7 @@ function toggleActive() {
     </section>
 
     <!-- A season of days, for the one cadence that owns every day. -->
-    <section v-if="insight.heat.length" class="sheet block">
+    <section v-if="!isContainer && insight.heat.length" class="sheet block">
       <div class="block-head">
         <h2 class="block-title">Ultimas {{ insight.heat.length / 7 }} semanas</h2>
         <span class="legend" aria-hidden="true">
@@ -326,7 +415,7 @@ function toggleActive() {
     </section>
 
     <!-- WHEN the work actually happens, which the periods above cannot say. -->
-    <section class="sheet block">
+    <section v-if="!isContainer" class="sheet block">
       <div class="block-head">
         <h2 class="block-title">Ritmo</h2>
       </div>
@@ -337,42 +426,44 @@ function toggleActive() {
       />
     </section>
 
-    <div class="flex items-baseline justify-between gap-3 mt-7 mb-1">
-      <h2 class="!mb-0">Historico</h2>
-      <span class="count figure">
-        {{ insight.total }} {{ insight.total === 1 ? 'marcacao' : 'marcacoes' }}
-      </span>
-    </div>
+    <template v-if="showHistory">
+      <div class="flex items-baseline justify-between gap-3 mt-7 mb-1">
+        <h2 class="!mb-0">Historico</h2>
+        <span class="count figure">
+          {{ insight.total }} {{ insight.total === 1 ? 'marcacao' : 'marcacoes' }}
+        </span>
+      </div>
 
-    <p v-if="history.length === 0" class="section-empty">Nenhuma marcacao ainda.</p>
+      <p v-if="history.length === 0" class="section-empty">Nenhuma marcacao ainda.</p>
 
-    <ol v-else class="log">
-      <li v-for="period in visibleHistory" :key="period.key" class="period">
-        <div class="period-head">
-          <span class="period-key">{{ periodLabel(period.key) }}</span>
-          <span class="period-rule" aria-hidden="true"></span>
-          <span class="period-count figure">{{ period.entries.length }}x</span>
-        </div>
-        <ul>
-          <li v-for="(entry, index) in period.entries" :key="index" class="entry">
-            <span class="entry-tick" aria-hidden="true"></span>
-            <span v-if="entry.at" class="entry-at figure">{{ formatDateTime(entry.at) }}</span>
-            <span v-else class="entry-unknown">Horario nao registrado</span>
-          </li>
-        </ul>
-      </li>
-    </ol>
+      <ol v-else class="log">
+        <li v-for="period in visibleHistory" :key="period.key" class="period">
+          <div class="period-head">
+            <span class="period-key">{{ periodLabel(period.key) }}</span>
+            <span class="period-rule" aria-hidden="true"></span>
+            <span class="period-count figure">{{ period.entries.length }}x</span>
+          </div>
+          <ul>
+            <li v-for="(entry, index) in period.entries" :key="index" class="entry">
+              <span class="entry-tick" aria-hidden="true"></span>
+              <span v-if="entry.at" class="entry-at figure">{{ formatDateTime(entry.at) }}</span>
+              <span v-else class="entry-unknown">Horario nao registrado</span>
+            </li>
+          </ul>
+        </li>
+      </ol>
 
-    <!-- A log of four hundred periods is a page nobody scrolls; the recent ones
+      <!-- A log of four hundred periods is a page nobody scrolls; the recent ones
          are what a visit is usually about. -->
-    <button
-      v-if="history.length > LOG_PAGE"
-      type="button"
-      class="more"
-      @click="showAllPeriods = !showAllPeriods"
-    >
-      {{ showAllPeriods ? 'Mostrar menos' : `Ver todos os ${history.length} periodos` }}
-    </button>
+      <button
+        v-if="history.length > LOG_PAGE"
+        type="button"
+        class="more"
+        @click="showAllPeriods = !showAllPeriods"
+      >
+        {{ showAllPeriods ? 'Mostrar menos' : `Ver todos os ${history.length} periodos` }}
+      </button>
+    </template>
   </template>
 
   <template v-else>
@@ -515,6 +606,55 @@ function toggleActive() {
 
 /* Only the adherence tile carries a meter: it is the only figure that is a
    ratio, and a bar under a raw count would be a bar with no scale. */
+/*
+ * The roll a container's page shows instead of its own readings: one line per
+ * step, its adherence meter on the same hatched track every meter in the app
+ * draws, and the streak beside it. Worst first, so the line that needs reading
+ * is the first one.
+ */
+.roll {
+  @apply divide-y divide-line;
+}
+
+.roll-row {
+  @apply flex flex-wrap items-center gap-x-2 gap-y-1 py-2;
+}
+
+.roll-title {
+  @apply flex-1 min-w-[8rem] text-[0.9375rem] leading-snug font-medium text-fg no-underline;
+}
+
+.roll-title:hover {
+  @apply underline;
+}
+
+.roll-row.off .roll-title {
+  @apply text-fg-faint;
+}
+
+.roll-seq {
+  @apply text-[0.75rem] text-fg-faint;
+}
+
+.roll-meter {
+  @apply relative h-[3px] w-16 shrink-0 overflow-hidden;
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent 0 3px,
+    var(--color-line-strong) 3px 4px
+  );
+}
+
+.roll-fill {
+  @apply h-full;
+  background: var(--color-done);
+  transition: width 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.roll-rate {
+  @apply w-10 shrink-0 text-right text-[0.8125rem] text-fg-soft;
+}
+
 .tile-track {
   @apply relative h-[3px] mt-2 overflow-hidden;
   background-image: repeating-linear-gradient(

@@ -1,7 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Category, Task } from '@/entities'
-import { INKS, formatDate, formatDateTime, formatTime, turnPlan, turnSlots } from '@/entities'
+import {
+  INKS,
+  formatDate,
+  formatDateTime,
+  formatTime,
+  isSubtask,
+  parentIds,
+  turnPlan,
+  turnSlots,
+} from '@/entities'
 import { useTaskStore } from '@/stores/task-store'
 import { usePeriodSelection } from '@/composables/use-period-selection'
 import WeekdayBadge from '@/components/WeekdayBadge.vue'
@@ -67,20 +76,52 @@ const inkVars = computed(() => {
  * browsed day, and a pinned `referenceDate` deliberately does not subscribe to
  * the tick, so without it a row would freeze in the turn it first rendered in.
  */
+const parents = computed(() => parentIds(props.tasks))
+
+/**
+ * The steps filed under each container, off the unit's WHOLE set rather than
+ * the shown rows -- for the reason the head's ratio below reads the whole set:
+ * a heading's figure is its routine's, not the part of it a readout left up.
+ */
+const stepsOf = computed(() => {
+  const groups = new Map<string, Task[]>()
+  for (const task of props.tasks) {
+    if (!isSubtask(task, parents.value) || !task.parentId) continue
+    const steps = groups.get(task.parentId)
+    if (steps) steps.push(task)
+    else groups.set(task.parentId, [task])
+  }
+  return groups
+})
+
 const rows = computed(() =>
   (props.shown ?? props.tasks).map((task) => {
-    const count = store.completionCountFor(task, referenceDate.value)
-    const state = store.turnState(task, referenceDate.value, today.value)
+    // A container is a HEADING, not work: no stamp to turn, no gauge to fill,
+    // no deadline of its own. Everything the clock would say about it is said
+    // by the steps under it, so the row carries only its name and their ratio.
+    const head = parents.value.has(task.id)
+    const steps = head ? (stepsOf.value.get(task.id) ?? []) : []
+    const checks = head ? store.checkTally(steps, referenceDate.value) : undefined
+
+    const count = head ? 0 : store.completionCountFor(task, referenceDate.value)
+    const state = head
+      ? { late: [], current: [] }
+      : store.turnState(task, referenceDate.value, today.value)
     const late = new Set(state.late)
     const current = new Set(state.current)
 
     // An inactive task is out of the routine, so the clock has no claim on it.
     // Its chip already reads `Inativa`; without this the row would still wear
     // the rail of a state the chip is not showing.
-    const live = task.active
+    const live = task.active && !head
     const isLate = live && store.isLateOn(task, referenceDate.value, today.value)
     const isNow = live && current.size > 0
-    const completed = count >= task.timesPerPeriod
+    // A heading is finished when its routine is -- and only once the routine
+    // asks for something, so a container whose steps are all inactive does not
+    // rule itself through on a ratio it never had.
+    const completed = head
+      ? checks!.total > 0 && checks!.done >= checks!.total
+      : count >= task.timesPerPeriod
 
     // The latest check-off in the period, for any row that has one -- a task at
     // one of two has still been worked on, and when is worth saying. A daily's
@@ -92,6 +133,9 @@ const rows = computed(() =>
 
     return {
       task,
+      head,
+      checks,
+      step: isSubtask(task, parents.value),
       count,
       completed,
       doneAt: doneAt
@@ -99,12 +143,12 @@ const rows = computed(() =>
           ? formatTime(doneAt)
           : formatDateTime(doneAt)
         : undefined,
-      due: store.dueByNow(task, referenceDate.value, today.value),
+      due: head ? 0 : store.dueByNow(task, referenceDate.value, today.value),
       isLate,
       isNow,
       currentTurn: state.current[0],
-      slots: turnSlots(task.turns, task.timesPerPeriod),
-      groups: turnPlan(task.turns, task.timesPerPeriod).groups.map((group) => ({
+      slots: head ? [] : turnSlots(task.turns, task.timesPerPeriod),
+      groups: (head ? [] : turnPlan(task.turns, task.timesPerPeriod).groups).map((group) => ({
         ...group,
         // Every slot of this turn covered. Mutually exclusive with the other two
         // by construction: a covered group is in neither the late nor the open
@@ -131,7 +175,9 @@ const rows = computed(() =>
  * filtering the page, checking a late row off drops it, and a ratio counting
  * only what was late would fall from `0/2` to `0/1` for work done.
  */
-const activeTasks = computed(() => props.tasks.filter((task) => task.active))
+const activeTasks = computed(() =>
+  props.tasks.filter((task) => task.active && !parents.value.has(task.id)),
+)
 const checks = computed(() => store.checkTally(activeTasks.value, referenceDate.value))
 const hasRatio = computed(() => activeTasks.value.length > 0)
 /**
@@ -145,6 +191,13 @@ const settled = computed(() => checks.value.total > 0 && checks.value.done >= ch
 const progress = computed(() =>
   checks.value.total === 0 ? 0 : (checks.value.done / checks.value.total) * 100,
 )
+
+/**
+ * The fallback the head prints when there is no ratio to give. It counts the
+ * WORK, so a routine of three steps reads as three tasks rather than four --
+ * the same exclusion every other figure on the page makes.
+ */
+const rowCount = computed(() => props.tasks.filter((task) => !parents.value.has(task.id)).length)
 </script>
 
 <template>
@@ -178,8 +231,8 @@ const progress = computed(() =>
         <span class="sr-only">marcacoes concluidas</span>
       </span>
       <span v-else class="unit-count figure">
-        {{ tasks.length }}
-        <span class="sr-only">{{ tasks.length === 1 ? 'tarefa' : 'tarefas' }}</span>
+        {{ rowCount }}
+        <span class="sr-only">{{ rowCount === 1 ? 'tarefa' : 'tarefas' }}</span>
       </span>
 
       <!--
@@ -204,9 +257,12 @@ const progress = computed(() =>
           off: !row.task.active,
           late: row.isLate,
           now: row.isNow,
+          head: row.head,
+          step: row.step,
         }"
       >
         <TaskStamp
+          v-if="!row.head"
           :task="row.task"
           :count="row.count"
           :period-label="formatDate(referenceDate)"
@@ -217,7 +273,9 @@ const progress = computed(() =>
         />
 
         <div class="task-body">
-          <p class="task-title" :class="{ struck: row.completed }">{{ row.task.title }}</p>
+          <p class="task-title" :class="{ struck: row.completed, 'head-title': row.head }">
+            {{ row.task.title }}
+          </p>
 
           <!-- The moment of the latest check-off, led in by a rule in the done
                ink, the same green the strike above it takes once the period
@@ -227,7 +285,7 @@ const progress = computed(() =>
           </p>
 
           <CompletionGauge
-            v-if="row.task.timesPerPeriod > 1"
+            v-if="!row.head && row.task.timesPerPeriod > 1"
             :count="row.count"
             :total="row.task.timesPerPeriod"
             :slots="row.slots"
@@ -241,7 +299,10 @@ const progress = computed(() =>
           <!-- Dropped entirely when there is nothing to say, rather than
                spending its top margin on an empty line. -->
           <div
-            v-if="row.task.weekday || row.task.turns.length || !row.task.active || row.isLate"
+            v-if="
+              !row.head &&
+              (row.task.weekday || row.task.turns.length || !row.task.active || row.isLate)
+            "
             class="task-tags"
           >
             <WeekdayBadge v-if="row.task.weekday" :weekday="row.task.weekday" />
@@ -279,6 +340,13 @@ const progress = computed(() =>
           belong to the registry. Pulled up out of the row's padding so a 44px
           target does not make every row taller than its stamp.
         -->
+        <!-- A heading's figure is its routine's: the check-offs its steps ask
+             for, on the same scale the unit's own head is counting in. -->
+        <span v-if="row.head && row.checks && row.checks.total" class="head-count figure">
+          {{ row.checks.done }}<span class="unit-slash">/</span>{{ row.checks.total }}
+          <span class="sr-only">marcacoes concluidas</span>
+        </span>
+
         <TaskInfoLink :task="row.task" class="-my-2 -mr-1.5" />
       </li>
     </TransitionGroup>
@@ -498,6 +566,41 @@ const progress = computed(() =>
 
 .task:last-child {
   @apply border-b-0;
+}
+
+/*
+ * A HEADING, not a row. A task that holds steps is the name of a routine and
+ * carries no control of its own, so it gives up the stamp's gutter and the rule
+ * under it -- the steps below are the ruled rows, and a line between the name
+ * and the first of them would cut the group in half.
+ *
+ * Display face, one notch down and stood back: it has to read as a label over
+ * the rows rather than as the loudest row in the unit.
+ */
+.task.head {
+  @apply gap-2 pt-2.5 border-b-0;
+}
+
+.task.head:first-child {
+  @apply pt-1.5;
+}
+
+.task-title.head-title {
+  @apply font-display text-[0.8125rem] tracking-wide font-semibold text-fg-soft uppercase;
+}
+
+.head-count {
+  @apply shrink-0 self-center text-[0.75rem] text-fg-soft;
+}
+
+/*
+ * A step, indented under the name it belongs to and bracketed by a hairline
+ * down the group. Drawn as the row's own left BORDER rather than a
+ * pseudo-element or a background: the late rail already owns `::before` and the
+ * two washes already own `background-image`, and a late step has to keep both.
+ */
+.task.step {
+  @apply pl-4 border-l border-line;
 }
 
 .task-body {

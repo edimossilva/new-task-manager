@@ -331,6 +331,23 @@
     box-shadow: 0 0 0 3px var(--color-accent-dim);
   }
 
+  /*
+   * A field the model is filling in, not one that is ignoring you. Nothing but
+   * `.btn` was styled for this, so a disabled select kept the live ground and
+   * the accent hover -- a control that looks live and does nothing, which is
+   * the thing the week strip's disabled cells exist to avoid. The hover and
+   * focus rules above are unset here, or the pointer would still promise it.
+   */
+  input:disabled,
+  select:disabled,
+  textarea:disabled,
+  input:disabled:hover,
+  select:disabled:hover,
+  textarea:disabled:hover {
+    @apply text-fg-faint border-line cursor-not-allowed;
+    background: transparent;
+  }
+
   input::placeholder,
   textarea::placeholder {
     @apply text-fg-faint;

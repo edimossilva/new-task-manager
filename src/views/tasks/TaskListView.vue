@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import type { Category, Task, TaskFrequency } from '@/entities'
-import { FREQUENCIES, FREQUENCY_LABELS, FREQUENCY_ORDER, INKS, turnPlan } from '@/entities'
+import {
+  FREQUENCIES,
+  FREQUENCY_LABELS,
+  FREQUENCY_ORDER,
+  INKS,
+  isSubtask,
+  parentIds,
+  turnPlan,
+} from '@/entities'
 import { useTaskStore } from '@/stores/task-store'
 import { useCategoryStore } from '@/stores/category-store'
 import { useSortable } from '@/composables/use-sortable'
@@ -135,6 +143,28 @@ onMounted(() => {
   categoryStore.loadAll()
 })
 
+/*
+ * A sortable table cannot promise that a step sits under the task it belongs
+ * to -- pick the Titulo column and the two land pages apart -- so the
+ * relationship is stated in WORDS here rather than drawn as an indent. The rack
+ * is the page that nests them; this one is the page that lists them.
+ */
+const byId = computed(() => new Map(store.tasks.map((task) => [task.id, task])))
+const parents = computed(() => parentIds(store.tasks))
+
+/** The task a step is filed under, when it is a step and that task still exists. */
+function parentOf(task: Task): Task | undefined {
+  return isSubtask(task, parents.value) && task.parentId ? byId.value.get(task.parentId) : undefined
+}
+
+function childCount(task: Task): number {
+  return parents.value.has(task.id) ? store.countChildren(task.id) : 0
+}
+
+const pendingDelete = computed(() =>
+  pendingDeleteId.value ? byId.value.get(pendingDeleteId.value) : undefined,
+)
+
 function confirmDelete(id: string) {
   pendingDeleteId.value = id
   confirmDialog.value?.open()
@@ -253,6 +283,12 @@ function handleDelete() {
           <span v-if="task.timesPerPeriod > 1" class="chip figure">
             {{ task.timesPerPeriod }}x
           </span>
+          <span v-if="childCount(task)" class="chip">
+            {{ childCount(task) }} {{ childCount(task) === 1 ? 'subtarefa' : 'subtarefas' }}
+          </span>
+          <span v-else-if="parentOf(task)" class="chip">
+            Subtarefa de {{ parentOf(task)!.title }}
+          </span>
           <span v-if="!task.active" class="chip">Inativa</span>
         </div>
         <TaskRowActions :task="task" class="-mr-1.5" @delete="confirmDelete" />
@@ -281,6 +317,12 @@ function handleDelete() {
         >
           <td>
             <RouterLink :to="`/tasks/${task.id}`" class="row-title">{{ task.title }}</RouterLink>
+            <p v-if="childCount(task)" class="row-kin">
+              {{ childCount(task) }} {{ childCount(task) === 1 ? 'subtarefa' : 'subtarefas' }}
+            </p>
+            <p v-else-if="parentOf(task)" class="row-kin">
+              Subtarefa de {{ parentOf(task)!.title }}
+            </p>
             <p v-if="task.description" class="row-desc">{{ task.description }}</p>
           </td>
           <td>
@@ -325,7 +367,15 @@ function handleDelete() {
     <p v-else>Nenhuma tarefa corresponde aos filtros.</p>
   </div>
 
-  <ConfirmDialog ref="confirmDialog" @confirm="handleDelete" />
+  <!-- The steps go with the routine, so the dialog says so before it is
+       confirmed rather than after. -->
+  <ConfirmDialog ref="confirmDialog" @confirm="handleDelete">
+    <template v-if="pendingDelete && childCount(pendingDelete)">
+      Excluir "{{ pendingDelete.title }}" e suas {{ childCount(pendingDelete) }}
+      {{ childCount(pendingDelete) === 1 ? 'subtarefa' : 'subtarefas' }}?
+    </template>
+    <template v-else>Tem certeza que deseja excluir?</template>
+  </ConfirmDialog>
 </template>
 
 <style scoped>
@@ -404,6 +454,12 @@ tbody tr.tinted:hover {
 
 .row-title:hover {
   @apply text-accent-text;
+}
+
+/* What the row belongs to, or what belongs to it: one quiet line under the
+   title, where the table has no column to spare for a sixth axis. */
+.row-kin {
+  @apply mt-0.5 text-[0.75rem] leading-snug text-fg-faint;
 }
 
 .row-desc {

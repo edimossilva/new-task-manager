@@ -12,6 +12,7 @@ import {
   isoWeekday,
   matchesFrequency,
   normalizeTurns,
+  parentIds,
   parseDailyKey,
   periodIndex,
   periodKey,
@@ -284,15 +285,66 @@ export class TaskUseCases {
       validateTurns(input.turns ?? [], input.timesPerPeriod ?? 1)
     if (error) return { success: false, error }
 
+    // The container is resolved BEFORE the coercions below, because a step
+    // inherits its cadence and those coercions have to run against the
+    // INHERITED frequency rather than against whatever the form last showed.
+    const parent = this.resolveParent(input.parentId)
+    if (parent && 'error' in parent) return parent
+
+    const frequency = parent?.task.frequency ?? input.frequency
+    const weekday = parent ? parent.task.weekday : input.weekday
+
     this.taskRepo.create(
       createTask({
         ...input,
         title: input.title.trim(),
-        weekday: input.frequency === 'weekly' ? input.weekday : undefined,
-        turns: input.frequency === 'daily' ? input.turns : [],
+        frequency,
+        // A step lives where its container lives. The category and the cadence
+        // are what place a task in a rack unit and a band, so inheriting both
+        // is what guarantees a group is never split across two of either.
+        categoryId: parent ? parent.task.categoryId : input.categoryId,
+        weekday: frequency === 'weekly' ? weekday : undefined,
+        turns: frequency === 'daily' ? input.turns : [],
       }),
     )
     return { success: true }
+  }
+
+  /**
+   * The container a task is filed under, or the refusal that stops it being
+   * filed there at all. Returns undefined for a task that stands alone.
+   *
+   * ONE level, deliberately: a step cannot itself hold steps. That is what
+   * keeps `parentIds` a flat `Set` rather than a tree walk, and every counting
+   * site in the app a single lookup rather than a recursion.
+   */
+  private resolveParent(
+    parentId: string | undefined,
+  ): { task: Task } | { success: false; error: string } | undefined {
+    if (!parentId) return undefined
+
+    const parent = this.taskRepo.getById(parentId)
+    if (!parent) return { success: false, error: 'Tarefa pai nao encontrada.' }
+    if (parent.parentId) {
+      return { success: false, error: 'Uma subtarefa nao pode ter subtarefas.' }
+    }
+    return { task: parent }
+  }
+
+  /**
+   * The invariants every write lands on, in one place so the create path, the
+   * update path and the cascade onto a container's steps cannot drift: the
+   * title trimmed, the weekday cleared unless the cadence is weekly, and the
+   * turn plan re-normalized against this task's own target.
+   */
+  private normalized(task: Task, updatedAt: Date): Task {
+    return {
+      ...task,
+      title: task.title.trim(),
+      weekday: task.frequency === 'weekly' ? task.weekday : undefined,
+      turns: normalizeTurns(task.frequency === 'daily' ? task.turns : [], task.timesPerPeriod),
+      updatedAt,
+    }
   }
 
   update(task: Task): UseCaseResult {
@@ -301,6 +353,24 @@ export class TaskUseCases {
       validateTimesPerPeriod(task.timesPerPeriod) ??
       validateTurns(task.turns, task.timesPerPeriod)
     if (error) return { success: false, error }
+
+    // Read before anything is written, because both halves below need it: a
+    // step takes its container's cadence, and a container hands its own down.
+    const children = this.taskRepo.getByParentId(task.id)
+    let subject = task
+
+    if (task.parentId) {
+      if (task.parentId === task.id) {
+        return { success: false, error: 'Uma tarefa nao pode ser subtarefa dela mesma.' }
+      }
+      if (children.length > 0) {
+        return { success: false, error: 'Uma tarefa com subtarefas nao pode virar subtarefa.' }
+      }
+
+      const parent = this.resolveParent(task.parentId)
+      if (parent && 'error' in parent) return parent
+      if (parent) subject = this.inheriting(task, parent.task)
+    }
 
     // Changing the frequency leaves the old period keys in place. They can never
     // match a lookup in the new format, so the task correctly shows as pending,
@@ -312,14 +382,38 @@ export class TaskUseCases {
     // reads the same way, and is re-normalized rather than merely coerced: a
     // lowered `timesPerPeriod` must truncate it, or the surplus slots would ask
     // for check-offs the period can no longer hold and read Atrasada forever.
-    this.taskRepo.update({
-      ...task,
-      title: task.title.trim(),
-      weekday: task.frequency === 'weekly' ? task.weekday : undefined,
-      turns: normalizeTurns(task.frequency === 'daily' ? task.turns : [], task.timesPerPeriod),
-      updatedAt: new Date(),
-    })
+    const updatedAt = new Date()
+    const next = this.normalized(subject, updatedAt)
+    this.taskRepo.update(next)
+
+    // The container first, then its steps -- and the steps inherit from the
+    // NORMALIZED container rather than from the argument, or a container
+    // leaving `weekly` would hand a weekday it has just given up down to every
+    // step under it. A cadence change that stopped halfway would leave the
+    // group split across two bands, which is the one state the inheritance
+    // invariant exists to make impossible; a group leaving `daily` loses its
+    // steps' turn plans, exactly as a task leaving it loses its own, and for
+    // the same reason -- a stale plan would start firing the moment the cadence
+    // came back.
+    for (const child of children) {
+      this.taskRepo.update(this.normalized(this.inheriting(child, next), updatedAt))
+    }
     return { success: true }
+  }
+
+  /** A step wearing its container's frequency, weekday and category. */
+  private inheriting(child: Task, parent: Task): Task {
+    return {
+      ...child,
+      frequency: parent.frequency,
+      weekday: parent.weekday,
+      categoryId: parent.categoryId,
+    }
+  }
+
+  /** How many steps are filed under this task. Drives the delete confirm. */
+  countChildren(id: string): number {
+    return this.taskRepo.getByParentId(id).length
   }
 
   /**
@@ -336,8 +430,18 @@ export class TaskUseCases {
     return { success: true }
   }
 
+  /**
+   * Deleting a container takes its steps with it: a step has no life of its own
+   * once the routine it belonged to is gone.
+   *
+   * The steps go FIRST. Writes are fire-and-forget, so a half-failed cascade
+   * has to fail in the recoverable direction -- a container that lost its steps
+   * is still a row with a delete key on it, where a step whose container is
+   * gone is a row nothing on the page groups or explains.
+   */
   delete(id: string): UseCaseResult {
     if (!this.taskRepo.getById(id)) return { success: false, error: 'Tarefa nao encontrada.' }
+    for (const child of this.taskRepo.getByParentId(id)) this.taskRepo.delete(child.id)
     this.taskRepo.delete(id)
     return { success: true }
   }
@@ -395,12 +499,22 @@ export class TaskUseCases {
    * lend credit to the ones beside it.
    */
   checkTally(tasks: Task[], referenceDate: Date = new Date()): CheckTally {
+    // A container is not work, so it is dropped from both sides of the ratio.
+    // Outright, rather than at zero demand the way the week readings do it:
+    // this tally has no `extras` bucket to put a stray check-off in, and a
+    // `0/0` term would still let a container's own history read as done.
+    const parents = parentIds(tasks)
+
     return tasks.reduce<CheckTally>(
-      (tally, task) => ({
-        done:
-          tally.done + Math.min(this.completionCountFor(task, referenceDate), task.timesPerPeriod),
-        total: tally.total + task.timesPerPeriod,
-      }),
+      (tally, task) =>
+        parents.has(task.id)
+          ? tally
+          : {
+              done:
+                tally.done +
+                Math.min(this.completionCountFor(task, referenceDate), task.timesPerPeriod),
+              total: tally.total + task.timesPerPeriod,
+            },
       { done: 0, total: 0 },
     )
   }
@@ -565,12 +679,21 @@ export class TaskUseCases {
     let undated = 0
     let unplaced = 0
 
+    // A container asks for nothing: its steps carry the demand, and charging
+    // the week for both would count the routine twice. Its demand is zeroed
+    // rather than the task being skipped, so that a container that collected
+    // check-offs BEFORE it held steps still has them counted -- as `extras`,
+    // the bucket the page already keeps for work nothing asked for. Skipping it
+    // would break `routine.done + extras === every check-off the week owns`,
+    // which is the one promise this page makes about not losing work.
+    const parents = parentIds(tasks)
+
     for (const task of tasks) {
       const row: WeekTaskRow = {
         task,
         done: 0,
         credited: 0,
-        expected: this.weekExpectation(task, days, now),
+        expected: parents.has(task.id) ? 0 : this.weekExpectation(task, days, now),
         byWeekday: [0, 0, 0, 0, 0, 0, 0],
         undated: 0,
       }
@@ -618,7 +741,7 @@ export class TaskUseCases {
         byWeekday[index]! += count
       })
       days.forEach((day, index) => {
-        expectedByWeekday[index]! += this.dailyDemand(task, day, now)
+        expectedByWeekday[index]! += parents.has(task.id) ? 0 : this.dailyDemand(task, day, now)
       })
       undated += row.undated
       rows.push(row)
@@ -681,6 +804,11 @@ export class TaskUseCases {
     let total = 0
     let undated = 0
 
+    // A container carries no demand of its own -- its steps do -- but whatever
+    // it was checked off for before it held steps is still work that happened,
+    // so the walk above the gate counts it and only the shelf below is skipped.
+    const parents = parentIds(tasks)
+
     for (const task of tasks) {
       if (task.frequency !== frequency) continue
 
@@ -691,6 +819,8 @@ export class TaskUseCases {
         if (day) done[isoWeekday(day) - 1]! += 1
         else undated += 1
       }
+
+      if (parents.has(task.id)) continue
 
       total += this.weekExpectation(task, days, now)
 
@@ -789,8 +919,14 @@ export class TaskUseCases {
     const grids = points.map((point) => weekDates(point.start))
     const indexByKey = new Map(points.map((point, index) => [point.key, index]))
 
+    // Weightless for the reason it is in `weekSummary`: a container asks for
+    // nothing, and its own history lands in `extras` rather than disappearing.
+    const parents = parentIds(tasks)
+
     for (const task of tasks) {
-      const expectations = grids.map((days) => this.weekExpectation(task, days, now))
+      const expectations = parents.has(task.id)
+        ? grids.map(() => 0)
+        : grids.map((days) => this.weekExpectation(task, days, now))
       expectations.forEach((expected, index) => {
         points[index]!.expected += expected
       })
@@ -840,6 +976,8 @@ export class TaskUseCases {
   advanceCompletion(id: string, referenceDate: Date = new Date()): UseCaseResult {
     const task = this.taskRepo.getById(id)
     if (!task) return { success: false, error: 'Tarefa nao encontrada.' }
+    const held = this.holdsSubtasks(task)
+    if (held) return held
 
     const key = periodKey(task.frequency, referenceDate)
 
@@ -872,6 +1010,8 @@ export class TaskUseCases {
   setCompletionCount(id: string, count: number, referenceDate: Date = new Date()): UseCaseResult {
     const task = this.taskRepo.getById(id)
     if (!task) return { success: false, error: 'Tarefa nao encontrada.' }
+    const held = this.holdsSubtasks(task)
+    if (held) return held
 
     const key = periodKey(task.frequency, referenceDate)
     if (key > periodKey(task.frequency, new Date())) {
@@ -927,6 +1067,21 @@ export class TaskUseCases {
    * chronological. `count` is bounded by MAX_TIMES_PER_PERIOD, far below the cap,
    * so the slice length can never reach zero and swallow the prune.
    */
+  /**
+   * The refusal that keeps a container from collecting check-offs of its own.
+   *
+   * It has to live here rather than in the views: every control that writes one
+   * is reachable from a page that knows only an id, and a check-off the model
+   * then counts nowhere is data the app would be quietly hiding from the person
+   * who made it. `undoCompletion` is deliberately NOT guarded -- taking one
+   * back is how a task that already had a history gets rid of it after steps
+   * are filed under it.
+   */
+  private holdsSubtasks(task: Task): UseCaseResult | undefined {
+    if (this.taskRepo.getByParentId(task.id).length === 0) return undefined
+    return { success: false, error: 'Uma tarefa com subtarefas e concluida pelas suas subtarefas.' }
+  }
+
   private withCount(completions: Completion[], key: string, count: number): Completion[] {
     // Kept entries keep their original moment; only the surplus is new. Slicing
     // from the FRONT is what makes undo take back the most recent check rather

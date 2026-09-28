@@ -25,9 +25,9 @@ env vars (`.env`, not committed). `.firebaserc` and the hosting cache are gitign
 
 A personal recurring-task tracker (UI text is in **Brazilian Portuguese**, written without
 diacritics). Two entities: **tasks** -- a title, optional description, a frequency of
-once / daily / weekly / monthly / yearly, an optional weekday, an optional turn and an optional
-category -- and **categories**, which group them. A task is checked off for the *current period*
-and re-arms itself when the next one starts.
+once / daily / weekly / monthly / yearly, an optional weekday, an optional turn, an optional
+category and an optional parent task -- and **categories**, which group them. A task is checked
+off for the *current period* and re-arms itself when the next one starts.
 
 Data is stored per-user in Firestore under `users/{uid}/tasks/{taskId}` and
 `users/{uid}/categories/{categoryId}`, with Google sign-in via Firebase Auth. The security rules
@@ -74,6 +74,14 @@ layers.
   (and initializes the repositories) **before** the router is installed and the app mounts, so there
   is no auth flicker and no route-level loading state. A global `beforeEach` redirects
   unauthenticated users to `/login`, the only route with `meta: { public: true }`.
+- **The `RouterView` is KEYED on `$route.fullPath`** (`App.vue`, and `PreviewApp.vue` after it).
+  Every view in this app loads on mount -- `useEntityForm` reads its entity in `onMounted`,
+  `TaskDetailView` calls `load()` there -- and the router REUSES one component instance across two
+  routes it renders, so `/tasks/a` -> `/tasks/b` and `/tasks/:id/edit` -> `/tasks/new` kept the
+  first page's data and the first form's fields. The key makes the mount-once contract true again
+  instead of teaching every view to watch the route. The QUERY is part of it because the only
+  query parameters in the app are the form's `?category=` and `?parent=` presets, read on mount
+  too; a view that ever put its own state in the query would need this narrowed to the path.
 - **Sign-out order**: `AppNav` navigates to `/login` *first*, then calls `authStore.signOut()`.
   Clearing the repositories while a data view is still mounted lets its reactivity re-enter
   `getTaskRepository()` after the singletons are gone. (`controle-mensal` does this in the opposite
@@ -156,7 +164,8 @@ layers.
     taking it as a prop, so the ring cannot disagree with the row it sits in.
   - **Every meter reads CHECK-OFFS, not whole tasks**: `TaskUseCases.checkTally(tasks, date)` sums
     each task's count for the period, clamped at its own `timesPerPeriod` so an over-full task
-    cannot lend credit to the ones beside it, against a total of the targets. A task at 3/8 moves
+    cannot lend credit to the ones beside it, against a total of the targets. A task holding
+    SUBTASKS is skipped on both sides of the ratio -- see below; it is a heading, not work. A task at 3/8 moves
     its band's gauge and its card's meter by three eighths instead of leaving them at zero until
     the whole task lands -- and where nothing repeats every task is worth one check, so the figure
     is the task count it always was and nothing about those pages changed. It lives in the use
@@ -264,6 +273,91 @@ layers.
     intends to do is not a debt. (It counts their CHECK-OFFS, via the shared `checkTally`.) A card
     holding nothing but inactive tasks has no ratio to give and falls back to a plain count of the
     rows, with no meter under it.
+
+- **Sub-tasks**: a task may carry `parentId`, the id of the task it is a step of. One stored
+  field, and the whole feature rests on a single rule -- **a step counts as one task; the task
+  holding it counts as nothing.** A routine of three steps makes its band ask for three
+  check-offs, never four.
+  - **Parenthood is DERIVED, never stored.** `parentIds(tasks)` in `task.ts` collects the ids
+    something points AT; a task is a container iff it is in that set, and stops being one when its
+    last step goes. Nothing marks a container, so there is no flag to keep in step with the steps
+    and no migration -- the same move rollover makes, and `settled` and `hasRatio` after it.
+    `isSubtask(task, parents)` is the other half, and the reason it asks BOTH questions is that a
+    hand-written chain or cycle must terminate: a task that is a container AND carries a
+    `parentId` reads as a container with its own ignored, so two tasks pointing at each other are
+    two ordinary tasks rather than a walk with no end.
+  - **A step inherits `frequency`, `weekday` and `categoryId`**, enforced in `create`/`update`
+    where "weekday set implies weekly" already is, never trusted to the form. That is not a
+    convenience: the band axis is the frequency and the rack-unit axis is the category, so
+    inheriting both is what makes **a group inseparable** -- a container and its steps can never
+    land in two bands or two units, and `appearsOn` shows or hides all of them together.
+    `timesPerPeriod` and `turns` stay the step's OWN: how many times a step is wanted, and by when
+    inside the day, are properties of the step.
+  - The counting rule is written **four times, not twenty**: `checkTally`, `weekSummary`,
+    `weekdayLoad` and `weekTrend` are the methods every meter in the app bottoms out in, and each
+    builds `parentIds` once from the array it was handed. `SummaryView` therefore needed no change
+    at all. The three demand primitives (`dailyDemand`, `dayTarget`, `weekExpectation`) are only
+    reachable from inside those loops, so they carry no guard -- the same trade `validateTurns`
+    makes in not checking the frequency.
+    - `checkTally` skips a container OUTRIGHT; the three week readings zero its DEMAND and still
+      walk its check-offs. The difference is that those pages have an `extras` bucket and this one
+      does not: a task that collected check-offs BEFORE steps were filed under it keeps them, and
+      `routine.done + extras === every check-off the week owns` is a promise the summary makes
+      about not losing work. A `0/0` term in `checkTally` would let that same history read as done.
+  - **The array a count is taken from must be CLOSED under the relation** -- one that holds a
+    container holds its steps -- which the inheritance invariant gives for free everywhere except
+    `HomeView.visibleTasks`, which also gates on `active` and `isDueOn`. So that computed closes
+    it itself, with two gates past the old one: a step whose container is inactive goes with it
+    (derived, never written onto the step, so switching the container back on restores exactly the
+    steps that were left on), and a container with no surviving step is dropped. The second is a
+    look-of-the-page rule and a correctness rule at once, and it is what keeps a `once` container
+    -- which has no check-offs, so `settledElsewhere` can never settle it -- from sitting in the
+    Unica band forever.
+  - **A container is concluded by its steps**, refused in the use case rather than in the views:
+    every control that writes a check-off is reachable from a page that knows only an id, and a
+    check-off the model then counts nowhere is data the app would be hiding from the person who
+    made it. `undoCompletion` is deliberately not guarded -- taking one back is how a task that
+    already had a history gets rid of it.
+  - **Deleting a container takes its steps with it**, behind a confirm naming the count. The steps
+    go FIRST: writes are fire-and-forget, so a half-failed cascade has to fail in the recoverable
+    direction, and a container that lost its steps is still a row with a delete key on it where a
+    step whose container is gone is a row nothing groups or explains.
+  - **One level.** A step cannot hold steps and a container cannot be filed, refused in
+    `create`/`update`. That is what keeps `parentIds` a flat `Set` rather than a tree walk, and
+    every counting site a lookup rather than a recursion.
+  - **Hoje nests, the registry does not.** On the rack a container is a heading row -- the name,
+    its steps' ratio, an info key, and nothing else -- with the steps indented under a hairline
+    bracket. `HomeView`'s comparator sorts by the GROUP (its worst rank, then its title, the head
+    first), which is what lands a step next to its container and is why `buildCategoryRack` needs
+    no notion of nesting: it appends in the order it is given. A group rises as a unit on its worst
+    step, so one missed step cannot hide behind the two that went right. A step whose container is
+    not on the page is drawn as an ordinary row, the fallback a task pointing at a deleted category
+    already gets.
+    - A lit readout counts no container, so `keepCounted` re-admits the heading of any step that
+      survived the filter -- without it the steps would be indented under nothing.
+  - **The registry says it in words, not in an indent**: a sortable table cannot promise adjacency
+    (pick Titulo and the two land pages apart), so a step wears `Subtarefa de <name>` and a
+    container `N subtarefas`. Its tab counts keep counting every row: this is the page where you
+    edit the template, and a container is a template.
+  - **A container's own page is its steps' roll** (`TaskDetailView`): the four tiles, the three
+    charts and the stamp are dropped the way a one-off already drops the streak, the adherence and
+    the run chart. `taskInsight` on an empty `completions` reads `0%` kept over every period since
+    the task was created, which is a claim of failure where nothing was asked. The log survives
+    whenever the task has check-offs of its own, because nothing here destroys history -- it only
+    stops counting it.
+  - **The form carries both directions.** `Tarefa pai` says what this task belongs to and sits
+    ABOVE the three fields it governs, which it disables and mirrors rather than letting them show
+    a value the use case is about to overwrite. Under it, only while EDITING and only while no
+    parent is selected, `Nova subtarefa` says what belongs to this task -- it **saves first** and
+    then opens `/tasks/new?parent=<id>`, because leaving an edit form by a plain link drops
+    whatever is on it and nothing here discards work silently. It reads the LIVE `parentId` rather
+    than the saved task, so a task on its way to being filed under something cannot also be filed
+    under by something; the model is one level deep and the control has to know that before the
+    write does. A task holding steps also loses `Vezes` and `Turnos` from the form, since it is
+    concluded by its steps and has no target or deadline of its own.
+  - `deserialize` drops a `parentId` equal to the task's own id, the way `toWeekday` drops an 8:
+    this app normalizes on READ so the model never has to trust the write path. A missing field is
+    a task that stands alone, which is what every document written before the feature is.
 
 - **Weekly summary** (`/resumo`, `src/views/SummaryView.vue`): the one page that aggregates
   check-offs across tasks BY TIME. Everything else in the app reads either one task over many
@@ -475,7 +569,9 @@ layers.
     out of the page. The delete guard makes it unlikely, but a task nothing renders is a task
     nobody can edit or delete.
   - The card carries only what checking off needs: stamp, title, gauge, weekday, turn and state
-    chips, and **one action -- `TaskInfoLink`**, the way into the task's own page. Reading a task is
+    chips, and **one action -- `TaskInfoLink`**, the way into the task's own page. A task holding
+    SUBTASKS is a heading row instead -- name, its steps' ratio, the info key -- with the steps
+    indented beneath it. See **Sub-tasks**. Reading a task is
     safe from a page whose job is ticking things off; editing, switching off and deleting belong
     to the registry. No description and no frequency badge (the band above already names it). It
     had a second, denser mode while the tasks page shared it; the table took that job, and a
@@ -724,7 +820,8 @@ layers.
 - **The registry** (`TaskListView.vue`): EVERY task, once, whether or not it is due today, active,
   or finished. Six fields, all of them properties of the template -- title (+ description),
   frequency (+ weekday or turns), category, `timesPerPeriod` as `Nx`, `Ativa` / `Inativa`, and
-  the row actions. It is the only place that shows the whole set, which is what makes it the
+  the row actions, plus a line under the title naming what a step belongs to or how many steps a
+  container holds (**Sub-tasks**: this page states the relation rather than drawing it). It is the only place that shows the whole set, which is what makes it the
   place to find a task you have not seen in a month.
   - A table above `md` and a stacked card list below it, the same pair `CategoryListView` uses:
     six columns on a 360px screen is a horizontal scroll nobody wants. Both render the same rows

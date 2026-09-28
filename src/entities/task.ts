@@ -78,6 +78,16 @@ export interface Task {
   frequency: TaskFrequency
   /** Optional reference to a Category. Existing tasks predate categories. */
   categoryId?: string
+  /**
+   * The task this one is a step of, or undefined for a task that stands alone.
+   *
+   * A step counts as a task of its own everywhere in the app; the task it is
+   * filed under counts as NOTHING, being a container rather than work. The
+   * container is never marked as one -- see `parentIds` -- and a step inherits
+   * its frequency, weekday and category, so a group can never be split across
+   * two bands or two rack units.
+   */
+  parentId?: string
   /** Only meaningful for `weekly`. undefined = any day of the week. */
   weekday?: Weekday
   /**
@@ -123,11 +133,53 @@ export interface CreateTaskInput {
   description?: string
   frequency: TaskFrequency
   categoryId?: string
+  parentId?: string
   weekday?: Weekday
   timesPerPeriod?: number
   turns?: Turn[]
   /** Defaults to true: a task is in the routine unless the form says otherwise. */
   active?: boolean
+}
+
+/**
+ * The ids in `tasks` that some other task in the set is filed under.
+ *
+ * Parenthood is DERIVED, never stored: a task becomes a container the moment a
+ * step is filed under it and stops being one when the last step goes, so there
+ * is no flag to keep in step with the steps themselves and nothing to migrate.
+ * It is the same move the app makes with rollover -- read the state, never
+ * write it -- and it is what makes "the container counts as nothing" a single
+ * `Set` lookup at every place the app counts.
+ *
+ * The caller must hand in an array CLOSED under the relation: one that holds a
+ * container holds its steps. Every counting method is handed such an array by
+ * construction, because a step inherits its container's frequency and category
+ * and so can never be filtered into a different band or unit. The one place
+ * that can break it is the home page, which also gates on `active` and
+ * `isDueOn`; it closes the set itself.
+ */
+export function parentIds(tasks: Task[]): Set<string> {
+  const parents = new Set<string>()
+  for (const task of tasks) {
+    if (task.parentId) parents.add(task.parentId)
+  }
+  return parents
+}
+
+/**
+ * Whether this task is a STEP: filed under something, and not itself holding
+ * steps of its own.
+ *
+ * The second half is what makes the model cycle-proof without a single guard on
+ * the read path. The write path refuses to build a chain, but a hand-edited or
+ * half-written document can still carry one, and a task that is a container AND
+ * carries a `parentId` resolves as a container with its own `parentId` ignored.
+ * A two-task cycle therefore reads as two ordinary tasks rather than as a walk
+ * that never ends -- the same trade `use-category-rack` makes for a task
+ * pointing at a category that is gone.
+ */
+export function isSubtask(task: Task, parents: Set<string>): boolean {
+  return task.parentId !== undefined && !parents.has(task.id)
 }
 
 export function createTask(input: CreateTaskInput): Task {
@@ -141,6 +193,7 @@ export function createTask(input: CreateTaskInput): Task {
     description: input.description,
     frequency: input.frequency,
     categoryId: input.categoryId,
+    parentId: input.parentId,
     weekday: input.weekday,
     timesPerPeriod,
     turns: normalizeTurns(input.turns, timesPerPeriod),

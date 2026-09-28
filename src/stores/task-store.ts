@@ -42,6 +42,11 @@ export const useTaskStore = defineStore('task', () => {
     return createUseCases().lastCompletionAt(task, referenceDate)
   }
 
+  /** How many steps are filed under a task. Drives the delete confirm. */
+  function countChildren(id: string): number {
+    return createUseCases().countChildren(id)
+  }
+
   function checkTally(tasks: Task[], referenceDate: Date): CheckTally {
     return createUseCases().checkTally(tasks, referenceDate)
   }
@@ -167,6 +172,7 @@ export const useTaskStore = defineStore('task', () => {
     isCompletedFor,
     completionCountFor,
     lastCompletionAt,
+    countChildren,
     checkTally,
     weekSummary,
     weekdayLoad,

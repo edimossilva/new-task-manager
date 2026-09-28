@@ -13,7 +13,9 @@ const wide = new URLSearchParams(location.search).get('shell') === 'wide'
 
 <template>
   <main class="shell" :class="{ wide }">
-    <RouterView />
+    <!-- Keyed as the real shell keys it, or the harness would show a stale
+         view after any same-component navigation. See `App.vue`. -->
+    <RouterView :key="$route.fullPath" />
   </main>
 </template>
 

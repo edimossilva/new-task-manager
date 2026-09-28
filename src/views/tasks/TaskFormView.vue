@@ -12,6 +12,8 @@ import {
   TURN_RANGES,
   WEEKDAYS,
   WEEKDAY_LABELS,
+  isSubtask,
+  parentIds,
   turnPlan,
   turnSlots,
 } from '@/entities'
@@ -39,6 +41,17 @@ onMounted(() => {
   if (categoryStore.byId.has(preset)) categoryId.value = preset
 })
 
+// `?parent=` is the counterpart, and how a task's own page opens this form for
+// a new step. Checked against the loaded tasks for the same reason, and only
+// for a new one, so an edited task's own filing is never overwritten.
+onMounted(() => {
+  store.loadAll()
+
+  const preset = route.query.parent
+  if (isEditMode.value || typeof preset !== 'string') return
+  if (parentOptions.value.some((option) => option.id === preset)) parentId.value = preset
+})
+
 const { isEditMode, existing } = useEntityForm<Task>((id) => store.getById(id))
 
 // Reaching /tasks/:id/edit with an unknown id would otherwise fall through to
@@ -53,6 +66,8 @@ const frequency = ref<TaskFrequency>('daily')
 const weekday = ref<Weekday | ''>('')
 // '' is "Sem categoria"; converted to undefined at submit, like weekday.
 const categoryId = ref<string>('')
+// '' is "Nenhuma": a task that stands alone. Same sentinel as the two above.
+const parentId = ref<string>('')
 // A number input hands back '' when cleared, which the use case rejects rather
 // than quietly reading as 1.
 const timesPerPeriod = ref<number | ''>(1)
@@ -81,12 +96,51 @@ const singleTurn = computed<Turn | ''>({
   },
 })
 
+const parents = computed(() => parentIds(store.tasks))
+
+/**
+ * Every task this one could be filed under: not a step itself (the model is one
+ * level deep) and not this task, which would be a container holding itself.
+ */
+const parentOptions = computed(() =>
+  store.tasks
+    .filter((task) => !isSubtask(task, parents.value) && task.id !== existing.value?.id)
+    .sort((a, b) => a.title.localeCompare(b.title)),
+)
+
+const parent = computed(() => (parentId.value ? store.getById(parentId.value) : undefined))
+
+/**
+ * The steps already filed under the task being edited. Counted off `store.tasks`
+ * rather than through the repository, so the block below re-reads itself when
+ * one is added or deleted.
+ */
+const childCount = computed(() =>
+  existing.value ? store.tasks.filter((task) => task.parentId === existing.value!.id).length : 0,
+)
+
+/** This task already holds steps, so it can neither be filed nor checked off. */
+const holdsSteps = computed(() => childCount.value > 0)
+
 const target = computed(() => (typeof timesPerPeriod.value === 'number' ? timesPerPeriod.value : 0))
 
 const plan = computed(() => turnPlan(chosenTurns.value, target.value))
 
 /** Refused by `validateTurns` on submit; said here first, where it can be fixed. */
 const turnsOverflow = computed(() => chosenTurns.value.length > target.value)
+
+/*
+ * A step lives where its container lives, and the use case enforces that
+ * whatever the form sends. Mirroring it here is so the form never SHOWS a value
+ * it is about to overwrite -- the fields stay disabled beside it, saying which
+ * they are rather than going blank.
+ */
+watch(parent, (task) => {
+  if (!task) return
+  frequency.value = task.frequency
+  weekday.value = task.weekday ?? ''
+  categoryId.value = task.categoryId ?? ''
+})
 
 watch(existing, (task) => {
   if (!task) return
@@ -95,6 +149,7 @@ watch(existing, (task) => {
   frequency.value = task.frequency
   weekday.value = task.weekday ?? ''
   categoryId.value = task.categoryId ?? ''
+  parentId.value = task.parentId ?? ''
   timesPerPeriod.value = task.timesPerPeriod
   active.value = task.active
 })
@@ -110,8 +165,14 @@ const previewTotal = computed(() =>
     : 0,
 )
 
-function handleSubmit() {
-  if (notFound.value) return
+/**
+ * Writes the form and says whether it landed, so the two ways out can share it:
+ * Salvar, and the key that opens a new step under this task. That key has to
+ * save FIRST -- leaving an edit form by a plain link would drop whatever is on
+ * it, and nothing in this app discards work silently.
+ */
+function persist(): boolean {
+  if (notFound.value) return false
 
   const chosenWeekday =
     frequency.value === 'weekly' && weekday.value !== '' ? weekday.value : undefined
@@ -127,13 +188,17 @@ function handleSubmit() {
     // is not daily: a turn is a slice of ONE day.
     turns: frequency.value === 'daily' ? chosenTurns.value : [],
     categoryId: categoryId.value || undefined,
+    // Always present, for the reason stated above: the spread below preserves
+    // an omitted key, so leaving it off would make "remove the parent"
+    // impossible to express.
+    parentId: parentId.value || undefined,
     timesPerPeriod: timesPerPeriod.value === '' ? NaN : timesPerPeriod.value,
     active: active.value,
   }
 
   const saved = existing.value ? store.update({ ...existing.value, ...input }) : store.create(input)
 
-  if (!saved) return
+  if (!saved) return false
 
   // The task list hides tasks whose weekday has not come up yet, so a freshly
   // created one can be absent from the page we are about to land on. There is
@@ -143,7 +208,27 @@ function handleSubmit() {
     notifications.success(`Tarefa criada para ${WEEKDAY_LABELS[chosenWeekday]}.`)
   }
 
-  router.push('/tasks')
+  return true
+}
+
+function handleSubmit() {
+  if (persist()) router.push('/tasks')
+}
+
+/**
+ * Save, then open the new step's form already filed under this task.
+ *
+ * Reachable only while no parent is selected ABOVE: the model is one level
+ * deep, so a task on its way to being filed under something cannot also be
+ * filed under by something. Reading the live `parentId` rather than the saved
+ * task is what makes that hold -- picking a parent and then adding a step would
+ * otherwise save the step's own container as a step, and the use case would
+ * refuse the second write with nowhere to say so.
+ */
+function addChild() {
+  const held = existing.value
+  if (!held || !persist()) return
+  router.push(`/tasks/new?parent=${held.id}`)
 }
 </script>
 
@@ -165,9 +250,54 @@ function handleSubmit() {
       <textarea id="description" v-model="description" rows="3"></textarea>
     </div>
 
+    <!--
+      Placed above the three fields it governs, because it decides them: a step
+      lives where its container lives, so picking one here settles the category
+      and the cadence below rather than contradicting them.
+    -->
+    <div class="form-group">
+      <label for="parent">Tarefa pai</label>
+      <select id="parent" v-model="parentId" :disabled="holdsSteps">
+        <option value="">Nenhuma</option>
+        <option v-for="option in parentOptions" :key="option.id" :value="option.id">
+          {{ option.title }}
+        </option>
+      </select>
+      <p v-if="holdsSteps" class="hint">
+        Esta tarefa ja tem subtarefas, e uma tarefa com subtarefas nao pode virar subtarefa.
+      </p>
+      <p v-else-if="parent" class="hint">
+        A categoria e a frequencia seguem a tarefa pai. Cada subtarefa conta como uma tarefa; a
+        tarefa pai nao conta.
+      </p>
+    </div>
+
+    <!--
+      The other direction, beside the field that says what this belongs to: what
+      belongs to IT. Only while editing, since a task with no id yet is nothing
+      to file a step under, and only while no parent is selected above -- the
+      model is one level deep.
+    -->
+    <Transition name="reveal">
+      <div v-if="isEditMode && existing && !parentId" class="form-group">
+        <label for="add-child">Subtarefas</label>
+        <p v-if="holdsSteps" class="hint">
+          Esta tarefa tem {{ childCount }} {{ childCount === 1 ? 'subtarefa' : 'subtarefas' }}, e e
+          concluida por elas.
+        </p>
+        <p v-else class="hint">
+          Divida a tarefa em passos. Cada passo conta como uma tarefa e esta deixa de contar,
+          passando a ser so o nome do conjunto.
+        </p>
+        <button id="add-child" type="button" class="btn btn-secondary" @click="addChild">
+          Nova subtarefa
+        </button>
+      </div>
+    </Transition>
+
     <div class="form-group">
       <label for="category">Categoria</label>
-      <select id="category" v-model="categoryId">
+      <select id="category" v-model="categoryId" :disabled="!!parent">
         <option value="">Sem categoria</option>
         <option v-for="option in categoryStore.categories" :key="option.id" :value="option.id">
           {{ option.name }}
@@ -181,14 +311,20 @@ function handleSubmit() {
 
     <div class="form-group">
       <label for="frequency">Frequencia</label>
-      <select id="frequency" v-model="frequency">
+      <select id="frequency" v-model="frequency" :disabled="!!parent">
         <option v-for="option in FREQUENCIES" :key="option" :value="option">
           {{ FREQUENCY_LABELS[option] }}
         </option>
       </select>
     </div>
 
-    <div class="form-group">
+    <!--
+      A container is concluded by its steps, so it has no target of its own and
+      no turn to be late in. The controls go rather than sit there editing dead
+      data -- the same reason Dia da semana only exists while the cadence is
+      weekly.
+    -->
+    <div v-if="!holdsSteps" class="form-group">
       <label for="times">{{ TIMES_PER_PERIOD_LABELS[frequency] }}</label>
       <input
         id="times"
@@ -220,7 +356,7 @@ function handleSubmit() {
     <Transition name="reveal">
       <div v-if="frequency === 'weekly'" class="form-group">
         <label for="weekday">Dia da semana</label>
-        <select id="weekday" v-model="weekday">
+        <select id="weekday" v-model="weekday" :disabled="!!parent">
           <option value="">Qualquer dia</option>
           <option v-for="option in WEEKDAYS" :key="option" :value="option">
             {{ WEEKDAY_LABELS[option] }}
@@ -236,7 +372,7 @@ function handleSubmit() {
       -- the same degradation the gauge itself makes past twelve cells.
     -->
     <Transition name="reveal">
-      <div v-if="frequency === 'daily'" class="form-group">
+      <div v-if="frequency === 'daily' && !holdsSteps" class="form-group">
         <template v-if="target <= 1">
           <label for="turn">Turno</label>
           <select id="turn" v-model="singleTurn">

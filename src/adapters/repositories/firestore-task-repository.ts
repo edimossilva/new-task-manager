@@ -11,6 +11,7 @@ function serialize(task: Task): DocumentData {
     description: task.description ?? null,
     frequency: task.frequency,
     categoryId: task.categoryId ?? null,
+    parentId: task.parentId ?? null,
     weekday: task.weekday ?? null,
     timesPerPeriod: task.timesPerPeriod,
     turns: task.turns,
@@ -61,6 +62,15 @@ function deserialize(data: DocumentData): Task {
     description: (data.description as string | null) ?? undefined,
     frequency: data.frequency as TaskFrequency,
     categoryId: (data.categoryId as string | null) ?? undefined,
+    // Absent on every document written before sub-tasks, which is exactly what
+    // a task that stands alone looks like. No migration. A non-string is read
+    // the same way rather than trusted: a task filed under a value nothing can
+    // resolve is drawn as a top-level task, never dropped.
+    // Its own id would be a container holding itself, which no walk terminates
+    // on. Dropped on the way in, the way `toWeekday` drops an 8: this file
+    // normalizes on READ so the model never has to trust the write path.
+    parentId:
+      typeof data.parentId === 'string' && data.parentId !== data.id ? data.parentId : undefined,
     weekday: toWeekday(data.weekday),
     // Missing on every task written before the feature, and the normalizer
     // turns that absence into the 1 those tasks have always meant.
@@ -89,5 +99,9 @@ export class FirestoreTaskRepository extends FirestoreRepository<Task> implement
 
   getByCategoryId(categoryId: string): Task[] {
     return this.getAll().filter((task) => task.categoryId === categoryId)
+  }
+
+  getByParentId(parentId: string): Task[] {
+    return this.getAll().filter((task) => task.parentId === parentId)
   }
 }
