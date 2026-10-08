@@ -3,7 +3,8 @@
  *
  * Tuned so that in the AFTERNOON the rack shows every row state at once: a
  * missed turn, a running one, a kept one, a turn still ahead, a repeat part
- * done, an inactive task, an unfiled bucket, and a category with nothing left.
+ * done, an inactive task, an optional one, an unfiled bucket, a category with
+ * nothing left, and a category asking for nothing at all.
  * Add to this rather than editing a case away -- the point of the harness is
  * that the awkward combinations stay on screen.
  */
@@ -65,6 +66,10 @@ export const categories: Category[] = [
   // Its own card so the nesting is legible beside the flat ones, rather than
   // landing inside a card that is already showing every other row state.
   category('c4', 'Rotina', 'rose'),
+  // Nothing but OPTIONAL work: the unit has no ratio to give, so it falls back
+  // to a plain row count with no meter, and the Diaria gauge above it keeps its
+  // demand from the other cards. The one state a zero denominator can reach.
+  category('c5', 'Extras', 'sand'),
 ]
 
 export const tasks: Task[] = [
@@ -95,6 +100,17 @@ export const tasks: Task[] = [
   // and never for a task that is neither a container nor a step.
   task({ id: 't1', title: 'Alongamento', categoryId: 'c1', timesPerPeriod: 1 }),
   task({ title: 'Corrida', categoryId: 'c1', timesPerPeriod: 1, active: false }),
+  // Optional and PINNED TO MANHA, so in the afternoon it is the proof that an
+  // optional task is never late: no chip, no alarm rail, no alarm cells on the
+  // gauge, and the Atrasadas key does not count it. It still lowers nothing --
+  // the card's head asks for one less than it has rows.
+  task({
+    title: 'Meditar',
+    categoryId: 'c1',
+    turns: [1],
+    timesPerPeriod: 1,
+    optional: true,
+  }),
 
   // Casa -- a category with nothing left, so its name rules through.
   task({
@@ -217,6 +233,16 @@ export const tasks: Task[] = [
     timesPerPeriod: 1,
     active: false,
   }),
+  // An OPTIONAL step: it stays on the page and under the heading, and the
+  // heading's own ratio asks for one less than it has rows beneath it.
+  task({
+    id: 'p1e',
+    title: 'Anotar o sono',
+    categoryId: 'c4',
+    parentId: 'p1',
+    timesPerPeriod: 1,
+    optional: true,
+  }),
   // A WEEKLY container, for the inherited weekday: both rows appear from Quinta
   // on and neither before it.
   task({
@@ -246,6 +272,18 @@ export const tasks: Task[] = [
     weekday: 4,
     timesPerPeriod: 1,
   }),
+
+  // Extras -- a unit asking for NOTHING. One of the two is already done, so the
+  // card reads a plain row count with no meter while the work is still real,
+  // and the band gauge above it counts neither of them in its total.
+  task({
+    title: 'Tocar violao',
+    categoryId: 'c5',
+    timesPerPeriod: 1,
+    optional: true,
+    completions: [...past(2, 1), ...checks(1)],
+  }),
+  task({ title: 'Escrever no diario', categoryId: 'c5', timesPerPeriod: 2, optional: true }),
 
   // Unfiled -- the bucket has no ink, and settles like any other card.
   task({ title: 'Responder emails', turns: [2], timesPerPeriod: 1, completions: checks(1) }),

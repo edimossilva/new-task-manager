@@ -58,7 +58,20 @@ export interface WeekTaskRow {
    * that happened with no expectation to sit against.
    */
   credited: number
-  /** What the week asked of this task. 0 for a frequency with no weekly cadence. */
+  /**
+   * What this task's CADENCE asks of the week. 0 for a frequency with no weekly
+   * cadence, and 0 for a container, whose steps carry the demand.
+   *
+   * It is what gates CREDITING, which is why it is a separate figure from
+   * `expected` below: an optional task is asked nothing by the routine and its
+   * check-offs still count, so a single number could not answer both.
+   */
+  target: number
+  /**
+   * What the ROUTINE charges for this task: `target`, or 0 when the task is
+   * optional. This is the denominator; `credited` is the numerator, and the two
+   * deliberately do not share a gate.
+   */
   expected: number
   /** The check-offs that could be placed on a DAY, Monday first. Always length 7. */
   byWeekday: number[]
@@ -86,6 +99,13 @@ export interface WeekSummary {
   routine: CheckTally
   /** Done, but never asked for this week -- no weekly cadence, or out of the routine. */
   extras: number
+  /**
+   * The part of `routine.done` that carried no demand, because the task is
+   * optional. A SUBSET of the numerator, never a bucket of its own: the
+   * invariant `routine.done + extras === every check-off the week owns` is
+   * untouched, and this figure exists only so a `8/7` can explain itself.
+   */
+  optional: number
   /** Check-offs per weekday, Monday first. */
   byWeekday: number[]
   /**
@@ -497,6 +517,10 @@ export class TaskUseCases {
    * Done is clamped per task: lowering `timesPerPeriod` can leave more
    * check-offs recorded than the target asks for, and an over-full task must not
    * lend credit to the ones beside it.
+   *
+   * This is the ONE tally in the app whose `done` may exceed its `total`, and
+   * that is the whole point of the optional flag: a day of eight tasks with one
+   * optional asks for seven and can read 8/7.
    */
   checkTally(tasks: Task[], referenceDate: Date = new Date()): CheckTally {
     // A container is not work, so it is dropped from both sides of the ratio.
@@ -513,7 +537,10 @@ export class TaskUseCases {
               done:
                 tally.done +
                 Math.min(this.completionCountFor(task, referenceDate), task.timesPerPeriod),
-              total: tally.total + task.timesPerPeriod,
+              // The weaker exclusion: an optional task is work that counts when
+              // it is done and is never asked for, so it leaves the denominator
+              // and stays in the numerator above.
+              total: tally.total + (task.optional ? 0 : task.timesPerPeriod),
             },
       { done: 0, total: 0 },
     )
@@ -663,6 +690,11 @@ export class TaskUseCases {
    * surplus tick, a key from an old frequency -- is counted apart in `extras`
    * rather than dropped or averaged into a percentage it would distort. The
    * invariant: `routine.done + extras` is every check-off the week owns.
+   *
+   * An OPTIONAL task is the one case where crediting and charging part company,
+   * which is why each row carries both a `target` and an `expected`. Its
+   * cadence still has a target, so its check-offs credit the routine; the
+   * routine charges it nothing, so `routine.done` can exceed `routine.total`.
    */
   weekSummary(tasks: Task[], referenceDate: Date, now: Date = new Date()): WeekSummary {
     const days = weekDates(referenceDate)
@@ -676,6 +708,7 @@ export class TaskUseCases {
     const routine: CheckTally = { done: 0, total: 0 }
     const rows: WeekTaskRow[] = []
     let extras = 0
+    let optional = 0
     let undated = 0
     let unplaced = 0
 
@@ -689,11 +722,16 @@ export class TaskUseCases {
     const parents = parentIds(tasks)
 
     for (const task of tasks) {
+      // What the cadence asks, then what the routine charges for it. The two
+      // part company only for an optional task: it is credited against its own
+      // target and charged to nobody.
+      const target = parents.has(task.id) ? 0 : this.weekExpectation(task, days, now)
       const row: WeekTaskRow = {
         task,
         done: 0,
         credited: 0,
-        expected: parents.has(task.id) ? 0 : this.weekExpectation(task, days, now),
+        target,
+        expected: task.optional ? 0 : target,
         byWeekday: [0, 0, 0, 0, 0, 0, 0],
         undated: 0,
       }
@@ -719,19 +757,23 @@ export class TaskUseCases {
         else row.undated += 1
       }
 
-      // Nothing expected, nothing creditable: a monthly task's check-off is an
-      // extra whatever its own target says, so `credited` must not imply
-      // otherwise to anything reading a row later.
-      row.credited = row.expected > 0 ? this.creditCounts(task, counts).credited : 0
+      // Nothing the cadence asked for, nothing creditable: a monthly task's
+      // check-off is an extra whatever its own target says, so `credited` must
+      // not imply otherwise to anything reading a row later. The gate is the
+      // TARGET rather than the expectation, which is what keeps an optional
+      // task's check-offs inside the routine's numerator.
+      row.credited = row.target > 0 ? this.creditCounts(task, counts).credited : 0
 
       const band = bands.get(task.frequency)!
       band.done += row.done
       band.credited += row.credited
       band.expected += row.expected
 
-      if (row.expected > 0) {
+      if (row.target > 0) {
         routine.done += row.credited
+        // Zero for an optional task: credited above, charged nothing here.
         routine.total += row.expected
+        if (task.optional) optional += row.credited
         extras += row.done - row.credited
       } else {
         extras += row.done
@@ -741,7 +783,8 @@ export class TaskUseCases {
         byWeekday[index]! += count
       })
       days.forEach((day, index) => {
-        expectedByWeekday[index]! += parents.has(task.id) ? 0 : this.dailyDemand(task, day, now)
+        expectedByWeekday[index]! +=
+          parents.has(task.id) || task.optional ? 0 : this.dailyDemand(task, day, now)
       })
       undated += row.undated
       rows.push(row)
@@ -753,6 +796,7 @@ export class TaskUseCases {
       end: days[6]!,
       routine,
       extras,
+      optional,
       byWeekday,
       expectedByWeekday,
       undated,
@@ -807,6 +851,11 @@ export class TaskUseCases {
     // A container carries no demand of its own -- its steps do -- but whatever
     // it was checked off for before it held steps is still work that happened,
     // so the walk above the gate counts it and only the shelf below is skipped.
+    // An optional task takes the same arrangement for a different reason: the
+    // work is real and counted, the week simply never asked for it. So the
+    // block's on-time reading measures `done` (optional included) against
+    // `pace` (optional excluded), and an optional check-off pays down the
+    // week's backlog. That is the feature, not a leak.
     const parents = parentIds(tasks)
 
     for (const task of tasks) {
@@ -820,7 +869,7 @@ export class TaskUseCases {
         else undated += 1
       }
 
-      if (parents.has(task.id)) continue
+      if (parents.has(task.id) || task.optional) continue
 
       total += this.weekExpectation(task, days, now)
 
@@ -924,11 +973,15 @@ export class TaskUseCases {
     const parents = parentIds(tasks)
 
     for (const task of tasks) {
-      const expectations = parents.has(task.id)
+      // The cadence's own targets, which gate crediting below, and the demand
+      // the bar is drawn against -- the same split `weekSummary` carries, and
+      // for the same reason: an optional task credits against its target while
+      // raising nobody's shelf.
+      const targets = parents.has(task.id)
         ? grids.map(() => 0)
         : grids.map((days) => this.weekExpectation(task, days, now))
-      expectations.forEach((expected, index) => {
-        points[index]!.expected += expected
+      targets.forEach((target, index) => {
+        points[index]!.expected += task.optional ? 0 : target
       })
 
       // Bucketed by week, then by period key, since both the window test and the
@@ -951,7 +1004,7 @@ export class TaskUseCases {
       for (const [index, byKey] of counts) {
         const point = points[index]!
         const { credited, placed } = this.creditCounts(task, byKey)
-        if (expectations[index]! > 0) {
+        if (targets[index]! > 0) {
           point.done += credited
           point.extras += placed - credited
         } else {
@@ -1397,8 +1450,16 @@ export class TaskUseCases {
    *
    * Reads no completions, which is what keeps it cheap on the home page's hot
    * path -- the caller already holds the count.
+   *
+   * An optional task is asked for NOTHING, so the day has no slot of its own to
+   * hold against it. This is the deadline COUNT and `isLateOn` is the deadline
+   * VERDICT; both have to say it, since `isLateOn` also carries the weekday rule
+   * this method knows nothing about. Zeroing it here is what empties
+   * `turnState`'s late slice and puts out the gauge's overdue cells at once.
    */
   dueByNow(task: Task, referenceDate: Date = new Date(), now: Date = new Date()): number {
+    if (task.optional) return 0
+
     // Gated on the frequency the way `appearsOn` is, for a hand-edited document
     // carrying turns on a task whose cadence is not a day. Only a DAY can run
     // out of turns, which is what everything below measures against.
@@ -1493,6 +1554,13 @@ export class TaskUseCases {
    * can hold `MAX_COMPLETIONS` entries and this runs per row, per render.
    */
   isLateOn(task: Task, referenceDate: Date = new Date(), now: Date = new Date()): boolean {
+    // Nothing was asked, so nothing can be overdue. `--color-alarm` is the one
+    // colour the app reserves for a deadline that passed, and an optional task
+    // owes the day none. The companion gate is in `dueByNow`, which covers the
+    // turn rule below and the gauge's own overdue cells; this one is needed on
+    // its own for `lateByWeekday`, a rule that figure knows nothing about.
+    if (task.optional) return false
+
     const count = this.completionCountFor(task, referenceDate)
     if (count >= task.timesPerPeriod) return false
 

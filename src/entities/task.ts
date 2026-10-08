@@ -116,6 +116,22 @@ export interface Task {
    */
   active: boolean
   /**
+   * Work that is WANTED but never OWED: a check-off counts the moment it lands,
+   * and the task is never part of what the period asks for. Eight tasks with
+   * one optional make a goal of seven, and checking all eight off reads 8/7.
+   *
+   * It is the opposite half of `active`, and the two compose. An INACTIVE task
+   * is out of the routine entirely -- no demand, no credit, and it leaves Hoje.
+   * An OPTIONAL one is on the page and its check-offs count; only the demand is
+   * dropped. The rule every counting site follows: a container is zeroed on
+   * BOTH sides of the ratio, an optional task on the DENOMINATOR only.
+   *
+   * Having no demand, it has no deadline either -- see `dueByNow` and
+   * `isLateOn`. Absent on documents written before the flag, which read as
+   * required.
+   */
+  optional: boolean
+  /**
    * Check-offs, ascending by period key.
    *
    * A key REPEATS once per check-off, so a task needing three a day holds three
@@ -139,6 +155,8 @@ export interface CreateTaskInput {
   turns?: Turn[]
   /** Defaults to true: a task is in the routine unless the form says otherwise. */
   active?: boolean
+  /** Defaults to false: a task is asked for unless the form says otherwise. */
+  optional?: boolean
 }
 
 /**
@@ -198,6 +216,7 @@ export function createTask(input: CreateTaskInput): Task {
     timesPerPeriod,
     turns: normalizeTurns(input.turns, timesPerPeriod),
     active: input.active ?? true,
+    optional: input.optional ?? false,
     completions: [],
     createdAt: now,
     updatedAt: now,

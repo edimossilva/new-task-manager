@@ -243,6 +243,7 @@ function toggleActive() {
 
       <div class="plate-body">
         <div class="flex flex-wrap items-center gap-2">
+          <span v-if="task.optional" class="chip opt">Opcional</span>
           <span v-if="!task.active" class="chip off">Inativa</span>
           <span v-else-if="isLate" class="chip late">Atrasada</span>
           <CategoryBadge v-if="category" :category="category" />
@@ -327,6 +328,7 @@ function toggleActive() {
           <RouterLink :to="`/tasks/${row.task.id}`" class="roll-title">
             {{ row.task.title }}
           </RouterLink>
+          <span v-if="row.task.optional" class="chip opt">Opcional</span>
           <span v-if="!row.task.active" class="chip off">Inativa</span>
           <span class="roll-seq figure">seq {{ row.insight.streak }}</span>
           <div class="roll-meter" :aria-hidden="true">
@@ -549,6 +551,11 @@ function toggleActive() {
 
 .chip.off {
   @apply text-fg-faint;
+}
+
+/* Dashed and flat, as every "nothing was asked" mark in the app is. */
+.chip.opt {
+  @apply text-fg-faint bg-transparent border-dashed;
 }
 
 /* The same fault colour the rack row wears, so one state has one voice. */

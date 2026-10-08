@@ -108,8 +108,12 @@ const dayTotals = computed(() => ({
   expected: summary.value.expectedByWeekday.reduce((sum, count) => sum + count, 0),
 }))
 
-/** A task with nothing expected and nothing recorded has nothing to say here. */
-const rows = computed(() => summary.value.rows.filter((row) => row.done > 0 || row.expected > 0))
+/**
+ * A task with nothing asked and nothing recorded has nothing to say here. The
+ * TARGET again, so an untouched optional task is still on the roll -- reported
+ * as `Opcional` rather than quietly leaving the page it was part of.
+ */
+const rows = computed(() => summary.value.rows.filter((row) => row.done > 0 || row.target > 0))
 
 /**
  * One unit per category, grouped by the rack's own function: the cards ARE the
@@ -151,14 +155,21 @@ const units = computed(() => {
   })
 })
 
-type Outcome = 'missed' | 'partial' | 'finished' | 'extra'
+type Outcome = 'missed' | 'partial' | 'finished' | 'optional' | 'extra'
 
 /** Missed first: the roll-call is read for what slipped, not for what worked. */
-const OUTCOME_ORDER: Record<Outcome, number> = { missed: 0, partial: 1, finished: 2, extra: 3 }
+const OUTCOME_ORDER: Record<Outcome, number> = {
+  missed: 0,
+  partial: 1,
+  finished: 2,
+  optional: 3,
+  extra: 4,
+}
 const OUTCOME_LABELS: Record<Outcome, string> = {
   missed: 'Nao feita',
   partial: 'Parcial',
   finished: 'Concluida',
+  optional: 'Opcional',
   extra: 'Extra',
 }
 
@@ -166,10 +177,16 @@ const OUTCOME_LABELS: Record<Outcome, string> = {
  * `extra` is a task the week asked nothing of that was checked off anyway -- a
  * one-off finished, a monthly ticked, a task out of the routine. Real work, and
  * the reason it sits outside the ratio is exactly that nothing was expected.
+ *
+ * It reads the row's TARGET rather than its expectation, which is what keeps an
+ * optional daily task out of `extra`: its cadence did ask, the routine simply
+ * did not charge for it. And an optional task is never reported as MISSED --
+ * `Nao feita` is a fault, the same claim `Atrasada` makes, and nothing was owed.
  */
 function outcomeOf(row: WeekTaskRow): Outcome {
-  if (row.expected === 0) return 'extra'
-  if (row.credited >= row.expected) return 'finished'
+  if (row.target === 0) return 'extra'
+  if (row.task.optional) return row.credited >= row.target ? 'finished' : 'optional'
+  if (row.credited >= row.target) return 'finished'
   return row.credited > 0 ? 'partial' : 'missed'
 }
 
@@ -277,6 +294,15 @@ const roll = computed(() =>
         <template v-if="summary.routine.total === 0">Nada cobrado nesta semana</template>
         <template v-else-if="routinePercent === 100">Rotina completa</template>
         <template v-else>{{ summary.routine.total - summary.routine.done }} em aberto</template>
+        <!--
+          Counted in the figure above and asked for by nobody, which is the only
+          way that figure can run past its own total. Printed rather than left
+          to be inferred from an 8/7.
+        -->
+        <template v-if="summary.optional">
+          &middot; {{ summary.optional }}
+          {{ summary.optional === 1 ? 'opcional' : 'opcionais' }}
+        </template>
         <template v-if="summary.extras"> &middot; + {{ summary.extras }} fora da rotina </template>
       </p>
     </section>
@@ -315,9 +341,13 @@ const roll = computed(() =>
       <ul class="lines">
         <li v-for="band in bands" :key="band.frequency" class="line" :style="band.ink">
           <span class="line-name band-name">{{ band.label }}</span>
-          <span class="line-track band-track">
+          <!-- A horizon nothing was asked of -- a monthly band, or one holding
+               only optional work -- gets a dashed gap rather than an empty
+               meter: a hatched track reading zero is a claim of failure. -->
+          <span v-if="band.expected" class="line-track band-track">
             <span class="line-fill band-fill" :style="{ width: `${band.percent}%` }"></span>
           </span>
+          <span v-else class="line-void" aria-hidden="true"></span>
           <span class="line-figure figure">
             <template v-if="band.expected">
               {{ band.credited }}<span class="slash">/</span>{{ band.expected }}
@@ -574,6 +604,11 @@ const roll = computed(() =>
   background-image: repeating-linear-gradient(45deg, transparent 0 3px, var(--color-line) 3px 4px);
 }
 
+.line-void {
+  @apply flex-1 h-px;
+  background: repeating-linear-gradient(90deg, var(--color-line-strong) 0 3px, transparent 3px 7px);
+}
+
 .line-fill {
   @apply block h-full;
   transition: width 420ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -685,6 +720,11 @@ const roll = computed(() =>
   box-shadow: 0 0 6px var(--color-done-dim);
 }
 
+/* Hollow: the dot is drawn, nothing fills it, because nothing was asked. */
+.mark.optional {
+  @apply border border-line-strong;
+}
+
 .mark.extra {
   background: var(--color-fg-faint);
 }
@@ -729,6 +769,11 @@ const roll = computed(() =>
 
 .roll-outcome.partial {
   @apply text-accent-text border-accent-text bg-accent-dim;
+}
+
+/* Dashed and flat, as every "nothing was asked" mark in the app is. */
+.roll-outcome.optional {
+  @apply bg-transparent border-dashed;
 }
 
 .roll-figure {

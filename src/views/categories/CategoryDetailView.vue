@@ -104,7 +104,10 @@ const adherence = computed(() =>
   insights.value.reduce(
     (tally, row) => ({
       done: tally.done + row.insight.periodsDone,
-      total: tally.total + row.insight.periodsElapsed,
+      // An optional task asks for none of its periods, so its misses are not a
+      // debt this category carries -- the same exclusion every denominator in
+      // the app makes, one altitude up. Its kept periods stay in the numerator.
+      total: tally.total + (row.task.optional ? 0 : row.insight.periodsElapsed),
     }),
     { done: 0, total: 0 },
   ),
@@ -199,6 +202,9 @@ const roll = computed(() =>
   [...insights.value].sort(
     (a, b) =>
       Number(a.task.active === false) - Number(b.task.active === false) ||
+      // Under the routine, above what was switched off: the roll is read
+      // worst-first, and an optional task at 0% has failed nobody.
+      Number(a.task.optional) - Number(b.task.optional) ||
       a.insight.rate - b.insight.rate ||
       a.task.title.localeCompare(b.task.title),
   ),
@@ -251,13 +257,30 @@ function sinceLabel(insight: TaskInsight): string {
         </p>
       </article>
 
+      <!--
+        A category of nothing but OPTIONAL tasks asked for no period at all, so
+        there is no ratio to take: the dashed gap again, rather than an 0% over
+        a denominator of zero, which would read as total failure where nothing
+        was ever requested.
+      -->
       <article class="tile" :style="{ '--i': 1 }">
         <p class="tile-label">Aproveitamento</p>
-        <p class="tile-figure">{{ percentOf(adherence) }}<span class="tile-unit">%</span></p>
-        <p class="tile-sub figure">{{ adherence.done }}/{{ adherence.total }} periodos</p>
-        <div class="tile-track" aria-hidden="true">
+        <p class="tile-figure">
+          <template v-if="adherence.total">
+            {{ percentOf(adherence) }}<span class="tile-unit">%</span>
+          </template>
+          <template v-else>--</template>
+        </p>
+        <p class="tile-sub figure">
+          <template v-if="adherence.total">
+            {{ adherence.done }}/{{ adherence.total }} periodos
+          </template>
+          <template v-else>nada cobrado</template>
+        </p>
+        <div v-if="adherence.total" class="tile-track" aria-hidden="true">
           <div class="tile-fill" :style="{ width: `${percentOf(adherence)}%` }"></div>
         </div>
+        <div v-else class="tile-void" aria-hidden="true"></div>
       </article>
 
       <article class="tile" :style="{ '--i': 2 }">
@@ -350,6 +373,7 @@ function sinceLabel(insight: TaskInsight): string {
                 :turn="group.turn"
                 :count="group.count"
               />
+              <span v-if="row.task.optional" class="roll-off opt">Opcional</span>
               <span v-if="!row.task.active" class="roll-off">Inativa</span>
             </div>
 
@@ -536,6 +560,11 @@ function sinceLabel(insight: TaskInsight): string {
   transition: width 420ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* The tile's own counterpart to `.line-void`, at the track's height. */
+.tile-void {
+  @apply h-[3px] mt-2 border-b border-dashed border-line-strong;
+}
+
 .line-void {
   @apply flex-1 h-px;
   background: repeating-linear-gradient(90deg, var(--color-line-strong) 0 3px, transparent 3px 7px);
@@ -583,6 +612,11 @@ function sinceLabel(insight: TaskInsight): string {
 .roll-off {
   @apply font-mono text-[0.625rem] font-medium uppercase tracking-[0.1em]
          text-fg-faint bg-well border border-line-strong px-1.5 py-0.5 rounded-[2px];
+}
+
+/* Dashed and flat, as every "nothing was asked" mark in the app is. */
+.roll-off.opt {
+  @apply bg-transparent border-dashed;
 }
 
 .roll-meter {

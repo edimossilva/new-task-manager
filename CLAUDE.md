@@ -347,7 +347,12 @@ layers.
     stops counting it.
   - **The form carries both directions.** `Tarefa pai` says what this task belongs to and sits
     ABOVE the three fields it governs, which it disables and mirrors rather than letting them show
-    a value the use case is about to overwrite. Under it, only while EDITING and only while no
+    a value the use case is about to overwrite. Its options NAME their step count
+    (`Rotina matinal (5 subtarefas)`), because the list mixes two different things -- routines that
+    are already headings, and ordinary tasks that would BECOME one by this choice -- and a title
+    alone cannot say which. Nothing is printed at zero, which is most of the list. The counts come
+    from one `stepCounts` map that `childCount` reads too, so the figure in the option and the one
+    in the `Subtarefas` block below cannot disagree. Under it, only while EDITING and only while no
     parent is selected, `Nova subtarefa` says what belongs to this task -- it **saves first** and
     then opens `/tasks/new?parent=<id>`, because leaving an edit form by a plain link drops
     whatever is on it and nothing here discards work silently. It reads the LIVE `parentId` rather
@@ -358,6 +363,56 @@ layers.
   - `deserialize` drops a `parentId` equal to the task's own id, the way `toWeekday` drops an 8:
     this app normalizes on READ so the model never has to trust the write path. A missing field is
     a task that stands alone, which is what every document written before the feature is.
+
+- **Optional tasks**: `task.optional` is work that is WANTED but never OWED. One stored boolean,
+  and one rule beside the sub-task one -- **a container is zeroed on BOTH sides of the ratio, an
+  optional task on the DENOMINATOR only**. Eight tasks with one optional make a goal of seven, and
+  checking all eight off reads `8/7`. `checkTally` is therefore the one tally in the app whose
+  `done` may exceed its `total`, and that is the point rather than a leak.
+  - It is the opposite half of `active`, and the two COMPOSE. An inactive task is out of the
+    routine entirely -- no demand, no credit, and it leaves Hoje. An optional one is on the page,
+    keeps its gauge, its turns and its history, and only the demand is dropped.
+  - **The demand is split in two where crediting is gated on it.** `weekSummary` and `weekTrend`
+    decide whether a check-off joins the routine's numerator by asking whether anything was
+    expected, so zeroing `expected` would have stopped crediting the very work this feature
+    exists to count. Each row now carries a **`target`** -- what the task's CADENCE asks of the
+    week, zero for a container -- and an **`expected`** -- what the routine CHARGES, `target` or
+    zero when optional. Crediting gates on `target`, the denominator takes `expected`, and a
+    monthly task still lands in `extras` because its target was zero to begin with.
+  - Where the numerator is already accumulated above the container gate -- `checkTally`,
+    `weekdayLoad` -- one extra term does the whole job: `weekdayLoad`'s gate reads
+    `parents.has(task.id) || task.optional`, below the completion walk and above every shelf. So
+    Hoje's curves measure `done` (optional included) against `pace` (optional excluded), and an
+    optional check-off pays down the week's backlog.
+  - `WeekSummary.optional` is the credited check-offs that carried no demand. It is a **SUBSET of
+    `routine.done`**, never a bucket of its own: `routine.done + extras === every check-off the
+    week owns` is untouched, and the figure exists only so an `8/7` can explain itself in the
+    block's foot.
+  - **Never late, and it takes two gates.** `--color-alarm` says a deadline passed and an optional
+    task owes the day none, so `dueByNow` returns 0 (the deadline COUNT -- which empties
+    `turnState`'s late slice and puts out `CompletionGauge`'s overdue cells at the same time) and
+    `isLateOn` returns false (the deadline VERDICT, needed on its own because `lateByWeekday` is a
+    rule `dueByNow` knows nothing about). The Atrasadas readout and each band head's late count
+    follow for free, both reading `isLateOn`. `SummaryView` carries the same rule into words: an
+    optional row reads `Opcional`, never `Nao feita`, which is a fault.
+  - **Nothing asked gets no meter.** A band or rack unit holding only optional tasks has a
+    denominator of zero, and a hatched track reading 0% is a claim of failure where nothing was
+    requested -- so it takes the dashed gap the unfiled rail and the category page's empty
+    horizons already speak (`gauge-gap`, `line-void`, `tile-void`), with the plain count beside
+    it. `CategoryTaskCard.hasRatio` is read off the TALLY rather than off the rows for exactly
+    this: it is the same state the all-inactive unit was already in, reached by the other flag.
+    `percentOf` is untouched. A band is dropped on its ROW COUNT, never on its demand, or an
+    all-optional horizon would take its own work off the page.
+  - It is the step's OWN, never inherited -- the trade `timesPerPeriod` and `turns` make, since
+    how much is wanted of a step is a property of the step. A container's flag is inert (it counts
+    as nothing either way), so the form drops the checkbox for one exactly as it drops `Vezes` and
+    `Turnos`.
+  - `taskInsight` is untouched: a task's own page reads that task against its own rhythm, and
+    optionality is a statement about what the ROUTINE charges. The CATEGORY page's pooled
+    adherence does exclude it, because that figure is a debt across tasks.
+  - `deserialize` reads `data.optional === true` -- the mirror of `active`'s `!== false`, and the
+    default is the other way round: every document written before the flag is work the routine
+    asks for. No migration.
 
 - **Weekly summary** (`/resumo`, `src/views/SummaryView.vue`): the one page that aggregates
   check-offs across tasks BY TIME. Everything else in the app reads either one task over many

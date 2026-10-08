@@ -74,6 +74,10 @@ const timesPerPeriod = ref<number | ''>(1)
 // In the routine unless said otherwise. Seeded from the task when editing, so
 // saving without touching the box changes nothing.
 const active = ref(true)
+// Asked for unless said otherwise. The step's OWN, never inherited: how much is
+// wanted of a step is a property of the step, the trade `timesPerPeriod` and
+// `turns` already make.
+const optional = ref(false)
 
 /*
  * How many check-offs each turn claims. ONE source of truth for both input
@@ -99,13 +103,39 @@ const singleTurn = computed<Turn | ''>({
 const parents = computed(() => parentIds(store.tasks))
 
 /**
+ * How many steps each task already holds, resolved in ONE pass. Both the select
+ * below and `childCount` read it, so the figure the option prints and the one
+ * the Subtarefas block prints cannot disagree -- and the option list no longer
+ * filters the whole set once per row.
+ */
+const stepCounts = computed(() => {
+  const counts = new Map<string, number>()
+  for (const task of store.tasks) {
+    if (task.parentId) counts.set(task.parentId, (counts.get(task.parentId) ?? 0) + 1)
+  }
+  return counts
+})
+
+/**
  * Every task this one could be filed under: not a step itself (the model is one
  * level deep) and not this task, which would be a container holding itself.
+ *
+ * Each carries the count of steps already under it, because the list mixes two
+ * different things -- routines that are already headings, and ordinary tasks
+ * that would BECOME one by this choice. A title alone cannot say which, and the
+ * difference is what filing the task actually does: a container stops counting
+ * for itself. Nothing is printed at zero, where a `0 subtarefas` on every
+ * ordinary row would be noise on the majority of the list.
  */
 const parentOptions = computed(() =>
   store.tasks
     .filter((task) => !isSubtask(task, parents.value) && task.id !== existing.value?.id)
-    .sort((a, b) => a.title.localeCompare(b.title)),
+    .sort((a, b) => a.title.localeCompare(b.title))
+    .map((task) => {
+      const steps = stepCounts.value.get(task.id) ?? 0
+      const suffix = steps === 1 ? '1 subtarefa' : `${steps} subtarefas`
+      return { id: task.id, label: steps ? `${task.title} (${suffix})` : task.title }
+    }),
 )
 
 const parent = computed(() => (parentId.value ? store.getById(parentId.value) : undefined))
@@ -116,7 +146,7 @@ const parent = computed(() => (parentId.value ? store.getById(parentId.value) : 
  * one is added or deleted.
  */
 const childCount = computed(() =>
-  existing.value ? store.tasks.filter((task) => task.parentId === existing.value!.id).length : 0,
+  existing.value ? (stepCounts.value.get(existing.value.id) ?? 0) : 0,
 )
 
 /** This task already holds steps, so it can neither be filed nor checked off. */
@@ -152,6 +182,7 @@ watch(existing, (task) => {
   parentId.value = task.parentId ?? ''
   timesPerPeriod.value = task.timesPerPeriod
   active.value = task.active
+  optional.value = task.optional
 })
 
 // Preview of the strip the task will carry, so the number is a shape before it
@@ -194,6 +225,9 @@ function persist(): boolean {
     parentId: parentId.value || undefined,
     timesPerPeriod: timesPerPeriod.value === '' ? NaN : timesPerPeriod.value,
     active: active.value,
+    // Always present, for the reason stated above: the spread below preserves
+    // an omitted key, so clearing the box has to be expressible.
+    optional: optional.value,
   }
 
   const saved = existing.value ? store.update({ ...existing.value, ...input }) : store.create(input)
@@ -260,7 +294,7 @@ function addChild() {
       <select id="parent" v-model="parentId" :disabled="holdsSteps">
         <option value="">Nenhuma</option>
         <option v-for="option in parentOptions" :key="option.id" :value="option.id">
-          {{ option.title }}
+          {{ option.label }}
         </option>
       </select>
       <p v-if="holdsSteps" class="hint">
@@ -425,6 +459,22 @@ function addChild() {
         </p>
       </div>
     </Transition>
+
+    <!--
+      Dropped for a task that holds steps, the way Vezes and Turnos are: a
+      container counts as nothing on both sides of every ratio already, so a
+      flag saying it counts for less has nothing to act on.
+    -->
+    <div v-if="!holdsSteps" class="form-group">
+      <label class="check-row">
+        <input v-model="optional" type="checkbox" />
+        <span>Opcional</span>
+      </label>
+      <p class="hint">
+        Uma tarefa opcional nao entra na meta do periodo, mas conta quando e concluida -- e nunca
+        aparece como atrasada.
+      </p>
+    </div>
 
     <!--
       A checkbox, not the registry's power glyph: in a form the field is read

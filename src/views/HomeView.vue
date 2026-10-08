@@ -224,9 +224,23 @@ const bands = computed(() =>
       done: checks.done,
       total: checks.total,
       percent: percentOf(checks),
+      // Whether the band asks for anything at all. A horizon holding nothing but
+      // optional tasks has no ratio to give, and a hatched track reading zero
+      // would be a claim of failure where nothing was requested -- the grammar
+      // the unfiled rail and the category page's empty horizons already use.
+      hasDemand: checks.total > 0,
+      // Every row the band holds, headings excluded. The band is dropped on
+      // THIS rather than on the demand: an all-optional horizon still has rows
+      // to tick, and a page that hides them has taken the work away.
+      count: rows.length,
       // Whole tasks, the other reading: eight of eight checks on one task and
       // one of eight on eight tasks are the same percentage and not the same day.
-      tasks: { done: rows.filter(isCompleted).length, total: rows.length },
+      // The denominator follows the same rule as the check-level one above, so
+      // the foot and the figure cannot disagree about what the day asked for.
+      tasks: {
+        done: rows.filter(isCompleted).length,
+        total: rows.filter((task) => !task.optional).length,
+      },
       hasRepeats: rows.some((task) => task.timesPerPeriod > 1),
       // Which horizon is actually in trouble: a count in the band head says it
       // where the gauge above can only say how much is left.
@@ -239,7 +253,7 @@ const bands = computed(() =>
       // are the whole horizon's whatever is on screen.
       items: tasks,
     }
-  }).filter((band) => band.tasks.total > 0),
+  }).filter((band) => band.count > 0),
 )
 
 /** Whether the Para agora readout is on the page at all. */
@@ -805,20 +819,36 @@ const eyebrow = computed(() =>
       >
         <span class="gauge-head">
           <span class="gauge-label">{{ band.label }}</span>
-          <span class="gauge-pct figure">{{ band.percent }}%</span>
+          <span v-if="band.hasDemand" class="gauge-pct figure">{{ band.percent }}%</span>
         </span>
+        <!--
+          Nothing asked, so there is no ratio to print: the count alone. A
+          denominator of zero beside a figure would read as a target of none.
+        -->
         <span class="gauge-figure figure">
-          {{ band.done }}<span class="gauge-slash">/</span>{{ band.total }}
+          <template v-if="band.hasDemand">
+            {{ band.done }}<span class="gauge-slash">/</span>{{ band.total }}
+          </template>
+          <template v-else>{{ band.done }}</template>
         </span>
-        <span class="gauge-track">
+        <!--
+          The dashed rule is the app's own grammar for a gap where nothing is
+          being asked, and it is what a horizon of optional work gets instead of
+          a hatched track sitting at zero -- which would be a claim of failure.
+        -->
+        <span v-if="band.hasDemand" class="gauge-track">
           <span class="gauge-fill" :style="{ width: `${band.percent}%` }"></span>
         </span>
+        <span v-else class="gauge-gap"></span>
         <!--
           The foot is the task-level figure, kept because the two answer
           different questions: half the checks done can still be every task open.
         -->
         <span class="gauge-foot figure">
-          <template v-if="band.done >= band.total">Tudo concluido</template>
+          <template v-if="!band.hasDemand">
+            {{ band.count }} {{ band.count === 1 ? 'opcional' : 'opcionais' }}
+          </template>
+          <template v-else-if="band.done >= band.total">Tudo concluido</template>
           <template v-else-if="band.hasRepeats">
             {{ band.tasks.done }}<span class="gauge-slash">/</span>{{ band.tasks.total }} tarefas
           </template>
@@ -1304,6 +1334,16 @@ const eyebrow = computed(() =>
 .gauge-fill {
   @apply block h-full transition-[width] duration-500;
   background: var(--band-ink);
+}
+
+/*
+ * Nothing was asked of this horizon, so there is no scale to draw. A dashed
+ * rule at the track's own height, which is how the rest of the app says "no
+ * demand here" -- the unfiled rack unit's rail and the category page's empty
+ * horizons both speak it.
+ */
+.gauge-gap {
+  @apply block h-1.5 w-full mt-1.5 border border-dashed border-line-strong;
 }
 
 .gauge-foot {

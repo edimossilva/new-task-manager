@@ -132,8 +132,11 @@ const { sortedItems, sortKey, sortAsc, sortBy, sortClass } = useSortable(
     // codepoint above every letter, so no real category name can outrank it.
     category: (task) => categoryOf(task)?.name.toLowerCase() ?? '\uffff',
     times: (task) => task.timesPerPeriod,
-    // Ascending puts the routine first and what was switched off under it.
-    status: (task) => (task.active ? 0 : 1),
+    // Ascending puts the routine first and what was switched off under it, and
+    // inside each half the work the day asks for before the work it does not.
+    // One key rather than two: both are states of the template, and the column
+    // that shows them is one column.
+    status: (task) => (task.active ? 0 : 2) + (task.optional ? 1 : 0),
   },
   { key: 'category' },
 )
@@ -289,6 +292,7 @@ function handleDelete() {
           <span v-else-if="parentOf(task)" class="chip">
             Subtarefa de {{ parentOf(task)!.title }}
           </span>
+          <span v-if="task.optional" class="chip opt">Opcional</span>
           <span v-if="!task.active" class="chip">Inativa</span>
         </div>
         <TaskRowActions :task="task" class="-mr-1.5" @delete="confirmDelete" />
@@ -345,10 +349,16 @@ function handleDelete() {
           </td>
           <!-- The target, not a tally: how many check-offs the period asks for. -->
           <td class="figure">{{ task.timesPerPeriod }}x</td>
+          <!--
+            The table is capped at six columns, so Opcional rides the Situacao
+            cell rather than taking a seventh. The two are different axes and
+            both are states of the template, which is what this column holds.
+          -->
           <td>
             <span class="chip" :class="{ on: task.active }">
               {{ task.active ? 'Ativa' : 'Inativa' }}
             </span>
+            <span v-if="task.optional" class="chip opt ml-1">Opcional</span>
           </td>
           <td>
             <TaskRowActions :task="task" class="-my-2" @delete="confirmDelete" />
@@ -483,6 +493,11 @@ tbody tr.tinted:hover {
 .chip.on {
   @apply text-fg;
   border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-line-strong));
+}
+
+/* Dashed and flat: the app's grammar for a gap where nothing is being asked. */
+.chip.opt {
+  @apply bg-transparent border-dashed;
 }
 
 .empty {

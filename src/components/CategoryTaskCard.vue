@@ -179,7 +179,13 @@ const activeTasks = computed(() =>
   props.tasks.filter((task) => task.active && !parents.value.has(task.id)),
 )
 const checks = computed(() => store.checkTally(activeTasks.value, referenceDate.value))
-const hasRatio = computed(() => activeTasks.value.length > 0)
+/*
+ * Read off the TALLY rather than off the rows, because a unit holding nothing
+ * but OPTIONAL tasks has no ratio to give either -- the same state the
+ * all-inactive unit is already in, reached by the other flag. Both fall back to
+ * a plain count of the rows, with no meter under it.
+ */
+const hasRatio = computed(() => checks.value.total > 0)
 /**
  * Every active task in the unit has reached its target. Counted off the shared
  * tally rather than the rows, so the card cannot disagree with the ratio in its
@@ -301,7 +307,11 @@ const rowCount = computed(() => props.tasks.filter((task) => !parents.value.has(
           <div
             v-if="
               !row.head &&
-              (row.task.weekday || row.task.turns.length || !row.task.active || row.isLate)
+              (row.task.weekday ||
+                row.task.turns.length ||
+                row.task.optional ||
+                !row.task.active ||
+                row.isLate)
             "
             class="task-tags"
           >
@@ -328,6 +338,13 @@ const rowCount = computed(() => props.tasks.filter((task) => !parents.value.has(
               loudest of the four for the mildest of the states. A fault earns a
               word; being on time does not.
             -->
+            <!--
+              Opcional sits beside the pair rather than inside it: it is not a
+              state of the clock, it is what the row is worth to the day. Quiet,
+              and the title is NOT stood down the way an inactive one is -- the
+              row is on the page to be done.
+            -->
+            <span v-if="row.task.optional" class="task-optional">Opcional</span>
             <span v-if="!row.task.active" class="task-off">Inativa</span>
             <span v-else-if="row.isLate" class="task-late">Atrasada</span>
           </div>
@@ -642,6 +659,16 @@ const rowCount = computed(() => props.tasks.filter((task) => !parents.value.has(
 .task-off {
   @apply font-mono text-[0.625rem] font-medium uppercase tracking-[0.1em]
          text-fg-faint bg-well border border-line-strong px-1.5 py-0.5 rounded-[2px];
+}
+
+/*
+ * The same quiet register as Inativa, DASHED -- the app's grammar for a gap
+ * where nothing is being asked, which is exactly what an optional task is on
+ * the day's ledger. No ink: it is neither a fault nor the present.
+ */
+.task-optional {
+  @apply font-mono text-[0.625rem] font-medium uppercase tracking-[0.1em]
+         text-fg-faint border border-dashed border-line-strong px-1.5 py-0.5 rounded-[2px];
 }
 
 /*

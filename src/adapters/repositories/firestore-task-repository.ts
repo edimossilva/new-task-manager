@@ -16,6 +16,7 @@ function serialize(task: Task): DocumentData {
     timesPerPeriod: task.timesPerPeriod,
     turns: task.turns,
     active: task.active,
+    optional: task.optional,
     completions: task.completions.map((completion) => ({
       key: completion.key,
       at: completion.at ? Timestamp.fromDate(completion.at) : null,
@@ -82,6 +83,10 @@ function deserialize(data: DocumentData): Task {
     // Only an explicit `false` deactivates: every task written before the flag
     // existed was part of the routine, and a missing field must not hide it.
     active: data.active !== false,
+    // The mirror of the line above, and the default is the other way round:
+    // only an explicit `true` makes a task optional, so every document written
+    // before the flag reads as work the routine asks for. No migration.
+    optional: data.optional === true,
     completions: toCompletions(data.completions),
     createdAt: (data.createdAt as Timestamp).toDate(),
     updatedAt: (data.updatedAt as Timestamp).toDate(),
