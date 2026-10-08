@@ -60,6 +60,11 @@ const notFound = computed(() => isEditMode.value && existing.value === undefined
 
 const title = ref('')
 const description = ref('')
+// Both read by `saveAndNew`, which is the whole reason they exist: it leaves the
+// form MOUNTED, so nothing else would run the field checks a submit runs, and
+// nothing else would move the caret back up to the first field.
+const titleInput = ref<HTMLInputElement | null>(null)
+const formEl = ref<HTMLFormElement | null>(null)
 const frequency = ref<TaskFrequency>('daily')
 // '' is the "Qualquer dia" option. <option> values are strings, so the entity's
 // Weekday is produced at exactly one place, in handleSubmit.
@@ -250,6 +255,37 @@ function handleSubmit() {
 }
 
 /**
+ * Save, then hand back an empty form still carrying this one's SETTINGS.
+ *
+ * Filing a routine's steps is several tasks that differ only by name -- same
+ * container, same category, same cadence, often the same target -- and leaving
+ * by Salvar makes each one a round trip through /tasks and five selects. So
+ * only `title` and `description` are cleared: they are what distinguishes one
+ * task from the next, and everything else is the context the next one shares.
+ *
+ * Create mode only. An edit form already has its own second way out (`Nova
+ * subtarefa`), and `persist` would UPDATE rather than create, which is not what
+ * the word "outra" promises.
+ */
+function saveAndNew() {
+  // Asked for by hand because the key is deliberately NOT a submit button: a
+  // second submit button placed before Salvar would become the form's DEFAULT
+  // one, and pressing Enter in the title field would quietly start meaning
+  // "and another". So the key gives up the native check and takes it back
+  // here, which is also where the empty title is caught -- the use case's
+  // refusal renders at the TOP of a form whose foot is what you are looking at.
+  if (!formEl.value?.reportValidity()) return
+  if (!persist()) return
+
+  title.value = ''
+  description.value = ''
+  // Focus scrolls the field into view, which is also how the form says it
+  // reset: the toast says the task landed, the caret says where the next one
+  // goes.
+  titleInput.value?.focus()
+}
+
+/**
  * Save, then open the new step's form already filed under this task.
  *
  * Reachable only while no parent is selected ABOVE: the model is one level
@@ -273,10 +309,23 @@ function addChild() {
   <p v-if="notFound" class="error">Tarefa nao encontrada.</p>
   <p v-else-if="store.error" class="error">{{ store.error }}</p>
 
-  <form v-if="!notFound" class="sheet max-w-lg p-4 sm:p-5" @submit.prevent="handleSubmit">
+  <form
+    v-if="!notFound"
+    ref="formEl"
+    class="sheet max-w-lg p-4 sm:p-5"
+    @submit.prevent="handleSubmit"
+  >
     <div class="form-group">
       <label for="title">Titulo</label>
-      <input id="title" v-model="title" type="text" required autofocus autocomplete="off" />
+      <input
+        id="title"
+        ref="titleInput"
+        v-model="title"
+        type="text"
+        required
+        autofocus
+        autocomplete="off"
+      />
     </div>
 
     <div class="form-group">
@@ -494,6 +543,13 @@ function addChild() {
 
     <div class="flex flex-col-reverse sm:flex-row gap-2 pt-1">
       <RouterLink to="/tasks" class="btn btn-secondary">Cancelar</RouterLink>
+      <!--
+        Secondary, and only while creating: Salvar is the one primary on the
+        form, and this is the same action taking a different way out.
+      -->
+      <button v-if="!isEditMode" type="button" class="btn btn-secondary" @click="saveAndNew">
+        Salvar e criar outra
+      </button>
       <button type="submit" class="btn">Salvar</button>
     </div>
   </form>

@@ -916,6 +916,22 @@ layers.
     is now only what `TaskFormView` still honours. It checks the id against the loaded categories
     first, since a select whose value matches no `<option>` renders blank, and only for a NEW
     task, so it can never overwrite what an edited one points at.
+  - **A create form has two ways out**, and `Salvar e criar outra` is the second: it writes the
+    task and hands back an empty form still carrying this one's SETTINGS, clearing `title` and
+    `description` alone. Those are what tell one task from the next; everything else -- the
+    parent, the category, the cadence, the target, the turns, the two flags -- is the context the
+    next one shares, and filing a routine's steps through `Salvar` is five round trips through
+    `/tasks` re-picking all of it. It is **create-only**: an edit form has its own second way out
+    (`Nova subtarefa`), and `persist` would UPDATE there, which is not what `outra` promises.
+    - It is deliberately **`type="button"`**, which costs it the native required-field check and
+      buys back the thing that matters more: a second submit button placed before `Salvar` would
+      become the form's DEFAULT one, and Enter in the title field would quietly start meaning
+      "and another". So it asks for the check by hand, through the form's own `reportValidity()`.
+      Without it an empty title reaches the use case, whose refusal renders at the TOP of a form
+      whose foot is what you are looking at.
+    - The reset is the refocus: nothing remounts, so the caret is the only thing that can say the
+      form is empty again and where the next title goes. The store's own `Tarefa criada com
+      sucesso.` says the last one landed, so the key needs no toast of its own.
 - **Weekday-pinned weekly tasks**: a `weekly` task may carry an optional `weekday`
   (`Weekday = 1..7`, **ISO-8601 Monday = 1**). Completion is still the ISO **week** key, so the
   weekday says only *when in the week the task is due* -- adding or changing one needs no migration
